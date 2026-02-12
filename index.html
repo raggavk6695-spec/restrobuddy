@@ -400,13 +400,17 @@
             };
             useEffect(() => { localStorage.setItem('rb_notifications', JSON.stringify(notifications)); }, [notifications]);
 
-            const addOrder = (items) => {
+            const addOrder = (orderData) => {
+                const items = Array.isArray(orderData) ? orderData : orderData.items;
+                const method = Array.isArray(orderData) ? 'Cash' : (orderData.method || 'Cash');
+
                 const total = items.reduce((sum, item) => sum + (item.price * item.qty), 0);
                 const newOrder = {
                     id: `ORD-${Math.floor(Math.random() * 10000)}`,
                     items,
                     status: 'pending',
                     total,
+                    method,
                     date: new Date().toISOString()
                 };
 
@@ -1145,17 +1149,18 @@
             );
         };
 
-        // --- KITCHEN VIEW (Modernized) ---
+        // --- KITCHEN VIEW (Kanban Style) ---
         const Kitchen = () => {
             const { orders, updateOrderStatus, addNotification } = useData();
-            const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled').sort((a, b) => new Date(a.date) - new Date(b.date));
+            const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled');
 
-            const nextStatus = (current) => {
-                if (current === 'pending') return 'preparing';
-                if (current === 'preparing') return 'ready';
-                if (current === 'ready') return 'completed';
-                return current;
-            };
+            const getOrdersByStatus = (status) => activeOrders.filter(o => o.status === status).sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            const columns = [
+                { id: 'pending', title: 'Pending', color: 'orange', actionLabel: 'Start Cooking', next: 'preparing' },
+                { id: 'preparing', title: 'Preparing', color: 'blue', actionLabel: 'Mark Ready', next: 'ready' },
+                { id: 'ready', title: 'Ready', color: 'emerald', actionLabel: 'Complete', next: 'completed' }
+            ];
 
             const handleStatusUpdate = (orderId, newStatus) => {
                 updateOrderStatus(orderId, newStatus);
@@ -1163,57 +1168,83 @@
             };
 
             return (
-                <div className="space-y-6 fade-in pb-20">
-                    <div className="flex justify-between items-center">
+                <div className="h-[calc(100vh-140px)] flex flex-col fade-in">
+                    <div className="flex justify-between items-center mb-6">
                         <h2 className="text-2xl font-bold text-slate-800">Kitchen Display</h2>
-                        <span className="bg-orange-100 text-orange-800 text-xs font-bold px-3 py-1 rounded-full">{activeOrders.length} Active</span>
+                        <div className="flex gap-2">
+                            <span className="bg-slate-100 text-slate-600 text-xs font-bold px-3 py-1 rounded-full">{activeOrders.length} Active Orders</span>
+                        </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {activeOrders.length === 0 && (
-                            <div className="col-span-full text-center py-12 bg-slate-50 rounded-xl border border-slate-100 border-dashed">
-                                <Icon name="coffee" size={48} className="mx-auto text-slate-300 mb-3" />
-                                <p className="text-slate-500 font-medium">All caught up!</p>
-                                <p className="text-slate-400 text-sm">No active orders in the kitchen.</p>
-                            </div>
-                        )}
-                        {activeOrders.map(order => (
-                            <Card key={order.id} className={`border-t-4 ${order.status === 'ready' ? 'border-t-emerald-500 bg-emerald-50/30' : order.status === 'preparing' ? 'border-t-blue-500' : 'border-t-orange-500'}`}>
-                                <CardHeader className="pb-2">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <h3 className="font-bold text-lg text-slate-800">#{order.id.slice(0, 4)}</h3>
-                                            <p className="text-xs text-slate-500">{new Date(order.date).toLocaleTimeString()}</p>
-                                        </div>
-                                        <Badge variant={order.status === 'ready' ? 'success' : order.status === 'preparing' ? 'info' : 'warning'}>
-                                            {order.status.toUpperCase()}
-                                        </Badge>
-                                    </div>
-                                </CardHeader>
-                                <CardContent>
-                                    <div className="space-y-2 mb-4">
-                                        {order.items.map((item, i) => (
-                                            <div key={i} className="flex justify-between items-center bg-white p-2 rounded border border-slate-100 shadow-sm">
-                                                <span className="font-medium text-slate-700">{item.name}</span>
-                                                <span className="font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded text-sm">x{item.qty}</span>
+                    <div className="flex-1 overflow-x-auto overflow-y-hidden pb-4">
+                        <div className="h-full grid grid-cols-1 md:grid-cols-3 gap-6 min-w-[300px] md:min-w-0">
+                            {columns.map(col => {
+                                const colOrders = getOrdersByStatus(col.id);
+                                return (
+                                    <div key={col.id} className="flex flex-col h-full bg-slate-50 rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+                                        {/* Column Header */}
+                                        <div className={`p-4 border-b border-slate-200 flex justify-between items-center bg-white`}>
+                                            <div className="flex items-center gap-2">
+                                                <div className={`w-3 h-3 rounded-full bg-${col.color}-500`}></div>
+                                                <h3 className="font-bold text-slate-700">{col.title}</h3>
                                             </div>
-                                        ))}
+                                            <span className="bg-slate-100 text-slate-600 text-xs font-bold px-2 py-1 rounded-full">{colOrders.length}</span>
+                                        </div>
+
+                                        {/* Orders List */}
+                                        <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                                            {colOrders.length === 0 && (
+                                                <div className="text-center py-10 opacity-40">
+                                                    <Icon name={col.id === 'pending' ? 'clipboard' : col.id === 'preparing' ? 'loader' : 'check-circle'} size={32} className="mx-auto mb-2" />
+                                                    <p className="text-xs font-medium">No orders</p>
+                                                </div>
+                                            )}
+                                            {colOrders.map(order => (
+                                                <Card key={order.id} className="shadow-sm hover:shadow-md transition-all border-l-4" style={{ borderLeftColor: `var(--color-${col.color}-500)` }}>
+                                                    <CardContent className="p-4">
+                                                        <div className="flex justify-between items-start mb-3">
+                                                            <div>
+                                                                <h4 className="font-bold text-slate-800">#{order.id.slice(0, 4)}</h4>
+                                                                <p className="text-xs text-slate-500">{new Date(order.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                                            </div>
+                                                            {/* Timer or Badge could go here */}
+                                                        </div>
+
+                                                        <div className="space-y-1 mb-4">
+                                                            {order.items.map((item, i) => (
+                                                                <div key={i} className="flex justify-between text-sm">
+                                                                    <span className="text-slate-700">{item.name}</span>
+                                                                    <span className="font-bold text-slate-900">x{item.qty}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+
+                                                        <div className="flex gap-2">
+                                                            <Button
+                                                                onClick={() => handleStatusUpdate(order.id, col.next)}
+                                                                className={`flex-1 justify-center text-xs py-2 h-8 ${col.id === 'ready' ? 'bg-emerald-500 hover:bg-emerald-600' : 'bg-slate-800 hover:bg-slate-700'}`}
+                                                            >
+                                                                {col.actionLabel}
+                                                            </Button>
+                                                            {col.id === 'pending' && (
+                                                                <Button
+                                                                    variant="danger"
+                                                                    onClick={() => { if (confirm('Cancel order? This will remove it from the list.')) handleStatusUpdate(order.id, 'cancelled'); }}
+                                                                    className="px-2 h-8"
+                                                                    title="Cancel Order"
+                                                                >
+                                                                    <Icon name="x" size={16} />
+                                                                </Button>
+                                                            )}
+                                                        </div>
+                                                    </CardContent>
+                                                </Card>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div className="pt-3 border-t border-slate-100/50 flex gap-2">
-                                        {order.status !== 'ready' && (
-                                            <Button onClick={() => handleStatusUpdate(order.id, nextStatus(order.status))} className="w-full flex justify-center gap-2">
-                                                {order.status === 'pending' ? 'Start Cooking' : 'Mark Ready'} <Icon name="arrow-right" size={16} />
-                                            </Button>
-                                        )}
-                                        {order.status === 'ready' && (
-                                            <Button variant="success" onClick={() => handleStatusUpdate(order.id, 'completed')} className="w-full flex justify-center gap-2">
-                                                <Icon name="check" size={16} /> Complete Order
-                                            </Button>
-                                        )}
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
+                                );
+                            })}
+                        </div>
                     </div>
                 </div>
             );
