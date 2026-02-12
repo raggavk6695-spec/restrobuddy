@@ -4,11 +4,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RestroBuddy - Restaurant Management</title>
+    <title>RestroBuddy</title>
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍕</text></svg>">
 
     <!-- React & ReactDOM -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
     <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -20,6 +22,8 @@
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
     <script>
@@ -27,10 +31,9 @@
             theme: {
                 extend: {
                     colors: {
-                        primary: '#fc8019',
-                        secondary: '#333333',
-                        background: '#f8f8f8',
-                        surface: '#ffffff',
+                        primary: '#f97316', // Orange-500
+                        secondary: '#1e293b', // Slate-800
+                        background: '#f8fafc', // Slate-50
                         danger: '#ef4444',
                         success: '#22c55e',
                         warning: '#f59e0b',
@@ -45,11 +48,10 @@
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f8f8f8;
-            color: #333;
+            -webkit-font-smoothing: antialiased;
         }
 
-        /* Custom Scrollbar */
+        /* Modern Scrollbar */
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -69,13 +71,13 @@
         }
 
         .fade-in {
-            animation: fadeIn 0.3s ease-in-out;
+            animation: fadeIn 0.4s ease-out forwards;
         }
 
         @keyframes fadeIn {
             from {
                 opacity: 0;
-                transform: translateY(5px);
+                transform: translateY(10px);
             }
 
             to {
@@ -83,10 +85,21 @@
                 transform: translateY(0);
             }
         }
+
+        .glass {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .glass-dark {
+            background: rgba(30, 41, 59, 0.8);
+            backdrop-filter: blur(12px);
+        }
     </style>
 </head>
 
-<body>
+<body class="bg-background text-slate-800 h-screen overflow-hidden selection:bg-orange-100 selection:text-orange-900">
     <div id="root"></div>
 
     <script type="text/babel">
@@ -97,9 +110,9 @@
             const iconRef = useRef(null);
 
             useEffect(() => {
-                if (window.lucide) {
+                if (window.lucide && iconRef.current && iconRef.current.parentNode) {
                     window.lucide.createIcons({
-                        root: iconRef.current?.parentNode,
+                        root: iconRef.current.parentNode,
                         nameAttrs: { 'data-lucide': name },
                         attrs: {
                             class: `lucide lucide-${name} ${className}`,
@@ -555,9 +568,9 @@
 
         const useData = () => useContext(DataContext);
 
-        // --- DASHBOARD VIEW ---
+        // --- DASHBOARD VIEW (Modernized) ---
         const Dashboard = () => {
-            const { orders, transactions, inventory } = useData();
+            const { orders, transactions, inventory, purchaseOrders } = useData();
 
             const today = new Date().toDateString();
             const todayOrders = orders.filter(o => new Date(o.date).toDateString() === today);
@@ -567,82 +580,109 @@
 
             const criticalStock = inventory.filter(i => i.stock <= 0).length;
             const lowStock = inventory.filter(i => i.stock > 0 && i.stock <= i.minStock).length;
+            const pendingPOs = purchaseOrders.filter(po => po.status === 'pending').length;
 
-            const handleReset = () => {
-                if (confirm("This will clear all local data. Continue?")) {
-                    localStorage.clear();
-                    window.location.reload();
-                }
-            };
-
-            // Simple Chart Data (Last 5 orders revenue)
-            const recentRevenue = transactions.filter(t => t.type === 'income').slice(-7);
-            const maxRev = Math.max(...recentRevenue.map(r => r.amount), 100);
+            const StatCard = ({ title, value, icon, color, subValue, trend }) => (
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-start justify-between hover:shadow-md transition-all group">
+                    <div>
+                        <div className={`p-2 w-fit rounded-lg ${color} bg-opacity-10 text-opacity-100 mb-3 group-hover:scale-110 transition-transform`}>
+                            <Icon name={icon} size={24} className={color.replace('bg-', 'text-')} />
+                        </div>
+                        <p className="text-sm font-medium text-slate-500 mb-1">{title}</p>
+                        <h3 className="text-3xl font-bold text-slate-800 tracking-tight">{value}</h3>
+                        {(subValue || trend) && (
+                            <div className="flex items-center gap-2 mt-2">
+                                {trend && <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded flex items-center gap-1"><Icon name="trending-up" size={12} /> {trend}</span>}
+                                {subValue && <p className="text-xs text-slate-400">{subValue}</p>}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
 
             return (
-                <div className="space-y-6 fade-in">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <Card className="border-l-4 border-l-primary">
-                            <CardContent className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-slate-500 font-medium">Daily Revenue</p>
-                                    <h2 className="text-2xl font-bold">${todayRevenue.toFixed(2)}</h2>
-                                </div>
-                                <div className="p-3 bg-orange-100 rounded-full text-primary"><Icon name="dollar-sign" /></div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-slate-500 font-medium">Today's Orders</p>
-                                    <h2 className="text-2xl font-bold">{todayOrders.length}</h2>
-                                </div>
-                                <div className="p-3 bg-blue-100 rounded-full text-blue-600"><Icon name="shopping-bag" /></div>
-                            </CardContent>
-                        </Card>
-                        <Card className={criticalStock > 0 ? "border-l-4 border-l-red-500" : ""}>
-                            <CardContent className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-slate-500 font-medium">Stock Alerts</p>
-                                    <h2 className="text-2xl font-bold flex gap-2">
-                                        {criticalStock > 0 && <span className="text-red-500">{criticalStock} Critical</span>}
-                                        {lowStock > 0 && <span className="text-yellow-500">{lowStock} Low</span>}
-                                        {criticalStock === 0 && lowStock === 0 && <span className="text-green-500">OK</span>}
-                                    </h2>
-                                </div>
-                                <div className="p-3 bg-red-100 rounded-full text-red-600"><Icon name="alert-triangle" /></div>
-                            </CardContent>
-                        </Card>
+                <div className="space-y-6 fade-in pb-12">
+                    <div>
+                        <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
+                        <p className="text-slate-500 text-sm">Welcome back, here's what's happening today.</p>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <Card>
-                            <CardHeader><CardTitle>Recent Revenue</CardTitle></CardHeader>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <StatCard
+                            title="Daily Revenue"
+                            value={`$${todayRevenue.toFixed(2)}`}
+                            icon="dollar-sign"
+                            color="bg-emerald-500"
+                            trend="+12% from yesterday"
+                        />
+                        <StatCard
+                            title="Today's Orders"
+                            value={todayOrders.length}
+                            icon="shopping-bag"
+                            color="bg-blue-500"
+                            subValue={`${todayOrders.filter(o => o.status === 'completed').length} Completed`}
+                        />
+                        <StatCard
+                            title="Stock Alerts"
+                            value={criticalStock + lowStock}
+                            subValue={`${criticalStock} Critical, ${lowStock} Low`}
+                            icon="alert-triangle"
+                            color={criticalStock > 0 ? "bg-red-500" : "bg-orange-400"}
+                        />
+                        <StatCard
+                            title="Pending POs"
+                            value={pendingPOs}
+                            subValue="Unreceived Orders"
+                            icon="truck"
+                            color="bg-purple-500"
+                        />
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <Card className="h-full">
+                            <CardHeader><CardTitle>Recent Activity</CardTitle></CardHeader>
                             <CardContent>
-                                <div className="h-48 flex items-end gap-2 justify-between px-2">
-                                    {recentRevenue.map((r, i) => (
-                                        <div key={i} className="flex-1 flex flex-col items-center gap-1 group">
-                                            <div
-                                                className="w-full bg-primary/20 hover:bg-primary transition-all rounded-t-sm relative"
-                                                style={{ height: `${(r.amount / maxRev) * 100}%` }}
-                                            >
-                                                <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    ${r.amount}
+                                <div className="space-y-4">
+                                    {orders.slice(0, 5).map(order => (
+                                        <div key={order.id} className="flex items-center justify-between border-b border-slate-50 pb-2 last:border-0 last:pb-0">
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-bold">
+                                                    #{order.id.slice(0, 4)}
+                                                </div>
+                                                <div>
+                                                    <p className="text-sm font-medium text-slate-800">{order.method} Order</p>
+                                                    <p className="text-xs text-slate-400">{new Date(order.date).toLocaleTimeString()}</p>
                                                 </div>
                                             </div>
-                                            <span className="text-xs text-slate-400">Order</span>
+                                            <span className="font-bold text-slate-700">${order.total.toFixed(2)}</span>
                                         </div>
                                     ))}
-                                    {recentRevenue.length === 0 && <p className="w-full text-center text-slate-400">No data yet</p>}
+                                    {orders.length === 0 && <p className="text-sm text-slate-400 text-center py-4">No recent activity.</p>}
                                 </div>
-                                <div className="mt-8 text-center border-t border-slate-100 pt-4">
-                                    <button
-                                        type="button"
-                                        onClick={handleReset}
-                                        className="text-xs text-red-400 hover:text-red-600 flex items-center justify-center gap-1 mx-auto"
-                                    >
-                                        <Icon name="trash-2" size={12} /> Factory Reset (Fix Issues)
-                                    </button>
+                            </CardContent>
+                        </Card>
+
+                        <Card className="h-full">
+                            <CardHeader><CardTitle>Low Stock Items</CardTitle></CardHeader>
+                            <CardContent>
+                                <div className="space-y-3">
+                                    {inventory.filter(i => i.stock <= i.minStock).slice(0, 5).map(item => (
+                                        <div key={item.id} className="flex items-center justify-between bg-orange-50/50 p-2 rounded-lg border border-orange-100">
+                                            <div className="flex items-center gap-2">
+                                                <Icon name="alert-circle" size={16} className="text-orange-500" />
+                                                <span className="text-sm font-medium text-slate-700">{item.name}</span>
+                                            </div>
+                                            <div className="text-xs font-bold text-orange-700 bg-orange-100 px-2 py-1 rounded-full">
+                                                {item.stock} {item.unit} Left
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {inventory.filter(i => i.stock <= i.minStock).length === 0 && (
+                                        <div className="text-center py-8 text-slate-400">
+                                            <Icon name="check-circle" size={32} className="mx-auto mb-2 text-emerald-400" />
+                                            <p className="text-sm">All items well stocked!</p>
+                                        </div>
+                                    )}
                                 </div>
                             </CardContent>
                         </Card>
@@ -653,12 +693,17 @@
 
         // --- POS VIEW ---
         const POS = () => {
-            const { menu, addOrder } = useData();
+            const { menu, addOrder, addNotification } = useData();
             const [cart, setCart] = useState([]);
-            const [searchTerm, setSearchTerm] = useState("");
-            const [selectedCategory, setSelectedCategory] = useState("All");
+            const [category, setCategory] = useState('All');
+            const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
+            const [searchQuery, setSearchQuery] = useState('');
 
-            const categories = ["All", ...new Set(menu.map(m => m.category))];
+            const categories = ['All', ...new Set(menu.map(m => m.category || 'Other'))];
+            const filteredMenu = menu.filter(item =>
+                (category === 'All' || item.category === category) &&
+                item.name.toLowerCase().includes(searchQuery.toLowerCase())
+            );
 
             const addToCart = (item) => {
                 const existing = cart.find(c => c.id === item.id);
@@ -676,273 +721,281 @@
                 }).filter(c => c.qty > 0));
             };
 
-            const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
-
-            const filteredMenu = menu.filter(m =>
-                (selectedCategory === "All" || m.category === selectedCategory) &&
-                m.name.toLowerCase().includes(searchTerm.toLowerCase())
-            );
+            const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
 
             const handleCheckout = () => {
                 if (cart.length === 0) return;
-                addOrder(cart);
+                addOrder({ items: cart, total, method: 'Cash' });
                 setCart([]);
-                alert("Order Placed Successfully!");
+                setIsMobileCartOpen(false);
+                addNotification("Order Placed", `Order for $${total.toFixed(2)} sent to kitchen.`, "success");
             };
 
-            return (
-                <div className="flex flex-col lg:flex-row h-full gap-6 fade-in text-sm lg:text-base">
-                    <div className="flex-1 flex flex-col gap-4">
-                        <div className="flex gap-4 items-center bg-white p-4 rounded-xl shadow-sm">
-                            <div className="relative flex-1">
-                                <Icon name="search" className="absolute left-3 top-2.5 text-slate-400" size={18} />
-                                <input
-                                    type="text"
-                                    placeholder="Search menu..."
-                                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
-                                    value={searchTerm}
-                                    onChange={e => setSearchTerm(e.target.value)}
-                                />
+            // Cart Component (Reusable for Desktop & Mobile Sheet)
+            const CartSection = () => (
+                <div className="flex flex-col h-full bg-white shadow-sm border border-slate-100 rounded-2xl overflow-hidden">
+                    <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                        <h2 className="font-bold text-lg text-slate-800">Current Order</h2>
+                        <span className="bg-orange-100 text-orange-700 text-xs font-bold px-2 py-1 rounded-full">{cart.length} items</span>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                        {cart.length === 0 ? (
+                            <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-60">
+                                <Icon name="shopping-cart" size={48} className="mb-2" />
+                                <p>Cart is empty</p>
                             </div>
-                            <div className="flex gap-2 overflow-x-auto pb-1">
-                                {categories.map(c => (
-                                    <button
-                                        key={c}
-                                        onClick={() => setSelectedCategory(c)}
-                                        className={`px-4 py-2 rounded-lg whitespace-nowrap transition-colors ${selectedCategory === c ? 'bg-secondary text-white' : 'bg-white border hover:bg-slate-50 text-slate-600'}`}
+                        ) : (
+                            cart.map(item => (
+                                <div key={item.id} className="flex items-center justify-between bg-white border border-slate-100 p-2 rounded-xl shadow-sm">
+                                    <div className="flex-1">
+                                        <p className="font-semibold text-slate-800 text-sm">{item.name}</p>
+                                        <p className="text-xs text-orange-600 font-medium">${item.price}</p>
+                                    </div>
+                                    <div className="flex items-center gap-3 bg-slate-50 rounded-lg p-1">
+                                        <button onClick={() => updateQty(item.id, -1)} className="w-6 h-6 flex items-center justify-center bg-white rounded shadow-sm text-slate-600 hover:text-red-500 active:scale-95 transition-all"><Icon name="minus" size={14} /></button>
+                                        <span className="text-sm font-bold w-4 text-center">{item.qty}</span>
+                                        <button onClick={() => updateQty(item.id, 1)} className="w-6 h-6 flex items-center justify-center bg-white rounded shadow-sm text-slate-600 hover:text-green-500 active:scale-95 transition-all"><Icon name="plus" size={14} /></button>
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
+
+                    <div className="p-4 bg-slate-50 border-t border-slate-100">
+                        <div className="flex justify-between items-center mb-4">
+                            <span className="text-slate-500 font-medium">Total</span>
+                            <span className="text-2xl font-bold text-slate-900">${total.toFixed(2)}</span>
+                        </div>
+                        <Button onClick={handleCheckout} className="w-full py-3 h-auto text-lg shadow-orange-200 shadow-xl" disabled={cart.length === 0}>
+                            Checkout <Icon name="arrow-right" size={20} className="ml-2 inline" />
+                        </Button>
+                    </div>
+                </div>
+            );
+
+            return (
+                <div className="flex flex-col lg:flex-row h-[calc(100vh-140px)] gap-6 fade-in relative">
+                    {/* Left: Menu Grid */}
+                    <div className="flex-1 flex flex-col h-full overflow-hidden">
+                        {/* Filters */}
+                        <div className="flex gap-2 overflow-x-auto pb-4 no-scrollbar">
+                            {categories.map(cat => (
+                                <button
+                                    key={cat}
+                                    onClick={() => setCategory(cat)}
+                                    className={`px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all shadow-sm ${category === cat
+                                        ? 'bg-orange-600 text-white shadow-orange-200'
+                                        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                                        }`}
+                                >
+                                    {cat}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Search */}
+                        <div className="mb-4 relative">
+                            <Icon name="search" size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input
+                                type="text"
+                                placeholder="Search menu..."
+                                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 bg-white shadow-sm transition-all"
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                            />
+                        </div>
+
+                        {/* Grid */}
+                        <div className="flex-1 overflow-y-auto pr-1">
+                            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-20 lg:pb-0">
+                                {filteredMenu.map(item => (
+                                    <div
+                                        key={item.id}
+                                        onClick={() => addToCart(item)}
+                                        className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 cursor-pointer hover:shadow-md hover:border-orange-200 transition-all group active:scale-95"
                                     >
-                                        {c}
-                                    </button>
+                                        <div className="w-10 h-10 bg-orange-100 text-orange-600 rounded-xl flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                                            <span className="font-bold text-lg">{item.emoji || '🍽️'}</span>
+                                        </div>
+                                        <h3 className="font-bold text-slate-800 leading-tight mb-1">{item.name}</h3>
+                                        <p className="text-orange-600 font-semibold">${item.price}</p>
+                                    </div>
                                 ))}
                             </div>
                         </div>
-
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto pr-1 pb-4" style={{ maxHeight: 'calc(100vh - 200px)' }}>
-                            {filteredMenu.map(item => (
-                                <div key={item.id}
-                                    onClick={() => addToCart(item)}
-                                    className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 cursor-pointer hover:shadow-md hover:border-primary/50 transition-all flex flex-col justify-between h-40 group"
-                                >
-                                    <div>
-                                        <div className="flex justify-between items-start mb-2">
-                                            <span className="text-xs font-semibold px-2 py-1 bg-slate-100 rounded text-slate-500">{item.category}</span>
-                                        </div>
-                                        <h3 className="font-bold text-slate-800 leading-tight mb-1">{item.name}</h3>
-                                    </div>
-                                    <div className="flex justify-between items-center mt-2">
-                                        <span className="font-bold text-primary text-lg">${item.price}</span>
-                                        <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-primary group-hover:text-white transition-colors">
-                                            <Icon name="plus" size={16} />
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
                     </div>
 
-                    <Card className="w-full lg:w-96 flex flex-col h-[calc(100vh-6rem)]">
-                        <CardHeader className="border-b border-slate-100 bg-slate-50/50">
-                            <CardTitle className="flex justify-between items-center">
-                                Current Order
-                                <Badge variant="primary">{cart.length} Items</Badge>
-                            </CardTitle>
-                        </CardHeader>
-                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                            {cart.length === 0 ? (
-                                <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2">
-                                    <Icon name="shopping-cart" size={48} className="text-slate-200" />
-                                    <p>Cart is empty</p>
-                                </div>
-                            ) : (
-                                cart.map(item => (
-                                    <div key={item.id} className="flex justify-between items-center bg-slate-50 p-2 rounded-lg">
-                                        <div className="flex-1">
-                                            <p className="font-medium text-slate-800">{item.name}</p>
-                                            <p className="text-xs text-primary font-bold">${item.price}</p>
-                                        </div>
-                                        <div className="flex items-center gap-3 bg-white border border-slate-200 rounded px-2 py-1">
-                                            <button onClick={(e) => { e.stopPropagation(); updateQty(item.id, -1); }} className="text-slate-400 hover:text-primary"><Icon name="minus" size={14} /></button>
-                                            <span className="font-medium w-4 text-center text-sm">{item.qty}</span>
-                                            <button onClick={(e) => { e.stopPropagation(); updateQty(item.id, 1); }} className="text-slate-400 hover:text-primary"><Icon name="plus" size={14} /></button>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                        <div className="p-4 border-t border-slate-100 bg-slate-50">
-                            <div className="flex justify-between items-center mb-4">
-                                <span className="text-slate-500">Total</span>
-                                <span className="text-2xl font-bold text-slate-800">${cartTotal.toFixed(2)}</span>
-                            </div>
-                            <Button className="w-full py-3 text-lg" disabled={cart.length === 0} onClick={handleCheckout}>
-                                Place Order
-                            </Button>
-                        </div>
-                    </Card>
-                </div>
-            )
-        };
-
-        // --- KITCHEN VIEW (KDS) ---
-        const Kitchen = () => {
-            const { orders, updateOrderStatus } = useData();
-            const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled').sort((a, b) => new Date(a.date) - new Date(b.date));
-
-            const columns = [
-                { id: 'pending', label: 'Pending', color: 'bg-yellow-50 border-yellow-200' },
-                { id: 'cooking', label: 'Cooking', color: 'bg-blue-50 border-blue-200' },
-                { id: 'ready', label: 'Ready', color: 'bg-green-50 border-green-200' }
-            ];
-
-            const handleNext = (order) => {
-                const flow = ['pending', 'cooking', 'ready', 'completed'];
-                const nextIdx = flow.indexOf(order.status) + 1;
-                if (nextIdx < flow.length) updateOrderStatus(order.id, flow[nextIdx]);
-            };
-
-            return (
-                <div className="h-full overflow-x-auto fade-in">
-                    <div className="flex gap-4 h-full min-w-[1000px]">
-                        {columns.map(col => (
-                            <div key={col.id} className={`flex-1 rounded-xl p-4 flex flex-col gap-4 ${col.color} border h-full`}>
-                                <div className="flex justify-between items-center pb-2 border-b border-black/5">
-                                    <h3 className="font-bold text-slate-700 uppercase tracking-wider text-sm">{col.label}</h3>
-                                    <Badge>{activeOrders.filter(o => o.status === col.id).length}</Badge>
-                                </div>
-                                <div className="space-y-3 overflow-y-auto flex-1">
-                                    {activeOrders.filter(o => o.status === col.id).map(order => (
-                                        <Card key={order.id} className="shadow-sm hover:shadow-md transition-shadow">
-                                            <div className="p-4">
-                                                <div className="flex justify-between items-start mb-3">
-                                                    <span className="font-mono text-xs font-bold text-slate-500">#{order.id.split('-')[1]}</span>
-                                                    <span className="text-xs text-slate-400">{new Date(order.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                                </div>
-                                                <div className="space-y-1 mb-4">
-                                                    {order.items.map((item, idx) => (
-                                                        <div key={idx} className="flex justify-between text-sm">
-                                                            <span className="text-slate-800 font-medium">{item.qty}x {item.name}</span>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                                <div className="flex gap-2">
-                                                    {col.id === 'pending' && (
-                                                        <Button size="sm" variant="danger" className="w-full" onClick={() => updateOrderStatus(order.id, 'cancelled')}>
-                                                            Cancel
-                                                        </Button>
-                                                    )}
-                                                    <Button size="sm" className="w-full" onClick={() => handleNext(order)}>
-                                                        Move to {col.id === 'pending' ? 'Cooking' : col.id === 'cooking' ? 'Ready' : 'Completed'}
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        </Card>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
+                    {/* Desktop Cart (Visible lg+) */}
+                    <div className="hidden lg:flex w-96 flex-col h-full">
+                        <CartSection />
                     </div>
+
+                    {/* Mobile Cart Floating Button */}
+                    <div className="lg:hidden fixed bottom-20 left-4 right-4 z-40">
+                        {cart.length > 0 && (
+                            <button
+                                onClick={() => setIsMobileCartOpen(true)}
+                                className="w-full bg-slate-900 text-white p-4 rounded-xl shadow-2xl flex items-center justify-between animate-bounce-short"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <div className="bg-orange-500 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">{cart.length}</div>
+                                    <span className="font-medium">View Cart</span>
+                                </div>
+                                <span className="font-bold text-lg">${total.toFixed(2)}</span>
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Mobile Cart Overlay */}
+                    {isMobileCartOpen && (
+                        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm lg:hidden flex justify-end">
+                            <div className="w-full h-full bg-slate-50 flex flex-col animate-slide-up">
+                                <div className="p-4 bg-white border-b border-slate-200 flex items-center justify-between">
+                                    <h2 className="font-bold text-lg">Your Order</h2>
+                                    <button onClick={() => setIsMobileCartOpen(false)} className="p-2 bg-slate-100 rounded-full text-slate-600"><Icon name="x" size={20} /></button>
+                                </div>
+                                <div className="flex-1 overflow-hidden p-4">
+                                    <CartSection />
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             );
         };
 
-        // --- INVENTORY VIEW ---
+
+        // --- INVENTORY VIEW (Modernized) ---
         const Inventory = () => {
             const { inventory, addIngredient, deleteIngredient } = useData();
             const [isEditing, setIsEditing] = useState(null);
-            const [formData, setFormData] = useState({ name: '', stock: 0, unit: 'kg', cost: 0, minStock: 0 });
+            const [formData, setFormData] = useState({ name: '', stock: '', unit: 'kg', minStock: '', cost: '' });
 
-            const handleSave = (e) => {
+            const handleSubmit = (e) => {
                 e.preventDefault();
-                addIngredient({ ...formData, stock: parseFloat(formData.stock), cost: parseFloat(formData.cost), minStock: parseFloat(formData.minStock) });
+                addIngredient({ ...formData, stock: Number(formData.stock), minStock: Number(formData.minStock), cost: Number(formData.cost) });
                 setIsEditing(null);
-                setFormData({ name: '', stock: 0, unit: 'kg', cost: 0, minStock: 0 });
+                setFormData({ name: '', stock: '', unit: 'kg', minStock: '', cost: '' });
             };
 
             const startEdit = (item) => {
-                setFormData(item || { name: '', stock: 0, unit: 'kg', cost: 0, minStock: 0 });
+                setFormData(item || { name: '', stock: '', unit: 'kg', minStock: '', cost: '' });
                 setIsEditing(true);
             };
 
-            return (
-                <div className="space-y-6 fade-in pb-10">
-                    <div className="flex justify-between items-center">
-                        <h2 className="text-2xl font-bold text-slate-800">Inventory</h2>
-                        <Button onClick={() => startEdit(null)}><Icon name="plus" size={18} /> Add Item</Button>
-                    </div>
+            const RowAction = ({ onClick, icon, color }) => (
+                <button onClick={(e) => { e.stopPropagation(); onClick(); }} className={`p-1.5 rounded-lg hover:bg-slate-100 ${color} transition-colors`}>
+                    <Icon name={icon} size={16} />
+                </button>
+            );
 
+            return (
+                <div className="space-y-6 fade-in pb-20">
                     <Card>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                                <thead className="bg-slate-50 text-slate-500 border-b border-slate-100">
-                                    <tr>
-                                        <th className="p-4 font-medium">Ingredient</th>
-                                        <th className="p-4 font-medium">Stock Level</th>
-                                        <th className="p-4 font-medium">Unit Cost</th>
-                                        <th className="p-4 font-medium">Unit</th>
-                                        <th className="p-4 font-medium">Status</th>
-                                        <th className="p-4 font-medium text-right">Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {inventory.map(item => (
-                                        <tr key={item.id} className="hover:bg-slate-50/50">
-                                            <td className="p-4 font-medium text-slate-800">{item.name}</td>
-                                            <td className="p-4">{item.stock}</td>
-                                            <td className="p-4">${item.cost ? parseFloat(item.cost).toFixed(2) : '0.00'}</td>
-                                            <td className="p-4 text-slate-500">{item.unit}</td>
-                                            <td className="p-4">
-                                                {item.stock <= 0 ? <Badge variant="danger">Critical</Badge> :
-                                                    item.stock <= item.minStock ? <Badge variant="warning">Low Warning</Badge> :
-                                                        <Badge variant="success">In Stock</Badge>}
-                                            </td>
-                                            <td className="p-4 text-right">
-                                                <button onClick={() => startEdit(item)} className="text-slate-400 hover:text-primary mr-2"><Icon name="edit-2" size={16} /></button>
-                                                <button onClick={() => { if (confirm(`Delete ${item.name}?`)) deleteIngredient(item.id); }} className="text-slate-400 hover:text-red-500"><Icon name="trash-2" size={16} /></button>
-                                            </td>
+                        <CardHeader className="flex flex-row items-center justify-between">
+                            <CardTitle>Inventory</CardTitle>
+                            <Button size="sm" onClick={() => startEdit(null)}><Icon name="plus" size={16} className="mr-2" /> Add Item</Button>
+                        </CardHeader>
+                        <CardContent>
+                            {/* Mobile Card View */}
+                            <div className="md:hidden space-y-3">
+                                {inventory.map(item => (
+                                    <div key={item.id} className="bg-white border border-slate-100 rounded-xl p-3 shadow-sm flex items-center justify-between" onClick={() => startEdit(item)}>
+                                        <div>
+                                            <p className="font-semibold text-slate-800">{item.name}</p>
+                                            <p className="text-xs text-slate-500">Min: {item.minStock} {item.unit} | ${item.cost || 0}/unit</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className={`font-bold ${item.stock <= item.minStock ? 'text-red-500' : 'text-emerald-600'}`}>
+                                                {item.stock} <span className="text-xs font-normal text-slate-400">{item.unit}</span>
+                                            </p>
+                                            <div className="flex justify-end mt-2 gap-2">
+                                                <RowAction icon="trash-2" color="text-red-400 hover:text-red-600" onClick={() => { if (confirm('Delete ' + item.name + '?')) deleteIngredient(item.id) }} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Desktop Table View */}
+                            <div className="hidden md:block overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="text-xs text-slate-500 uppercase bg-slate-50 border-y border-slate-100">
+                                        <tr>
+                                            <th className="px-4 py-3 font-medium">Item</th>
+                                            <th className="px-4 py-3 font-medium">Stock</th>
+                                            <th className="px-4 py-3 font-medium">Unit</th>
+                                            <th className="px-4 py-3 font-medium">Cost/Unit</th>
+                                            <th className="px-4 py-3 font-medium">Status</th>
+                                            <th className="px-4 py-3 font-medium text-right">Actions</th>
                                         </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50">
+                                        {inventory.map(item => (
+                                            <tr key={item.id} className="group hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => startEdit(item)}>
+                                                <td className="px-4 py-3 font-medium text-slate-700">{item.name}</td>
+                                                <td className={`px-4 py-3 font-bold ${item.stock <= item.minStock ? 'text-red-500' : 'text-emerald-600'}`}>
+                                                    {item.stock}
+                                                </td>
+                                                <td className="px-4 py-3 text-slate-500">{item.unit}</td>
+                                                <td className="px-4 py-3 text-slate-500">${item.cost || 0}</td>
+                                                <td className="px-4 py-3">
+                                                    {item.stock <= 0 ? <span className="text-red-500 font-bold text-xs bg-red-50 px-2 py-0.5 rounded">Critical</span> :
+                                                        item.stock <= item.minStock ? <span className="text-orange-500 font-bold text-xs bg-orange-50 px-2 py-0.5 rounded">Low</span> :
+                                                            <span className="text-emerald-500 font-bold text-xs bg-emerald-50 px-2 py-0.5 rounded">OK</span>}
+                                                </td>
+                                                <td className="px-4 py-3 text-right flex justify-end gap-1">
+                                                    <RowAction icon="trash-2" color="text-slate-400 hover:text-red-600" onClick={() => { if (confirm('Delete ' + item.name + '?')) deleteIngredient(item.id) }} />
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {inventory.length === 0 && <tr><td colSpan="6" className="text-center py-8 text-slate-400">No inventory items</td></tr>}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </CardContent>
                     </Card>
 
+                    {/* Edit/Add Modal */}
                     {isEditing && (
-                        <div className="fixed inset-0 bg-black/20 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-                            <Card className="w-full max-w-md animate-in fade-in zoom-in-95 duration-200">
-                                <CardHeader><CardTitle>{formData.id ? 'Edit Ingredient' : 'New Ingredient'}</CardTitle></CardHeader>
-                                <CardContent>
-                                    <form onSubmit={handleSave} className="space-y-4">
-                                        <div>
-                                            <Label>Name</Label>
-                                            <Input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required />
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
+                            <Card className="w-full max-w-md shadow-2xl">
+                                <CardHeader className="flex flex-row items-center justify-between border-b border-slate-100 pb-4">
+                                    <CardTitle>{formData.id ? 'Edit Ingredient' : 'New Ingredient'}</CardTitle>
+                                    <button onClick={() => setIsEditing(null)} className="text-slate-400 hover:text-slate-600"><Icon name="x" size={20} /></button>
+                                </CardHeader>
+                                <CardContent className="pt-4">
+                                    <form onSubmit={handleSubmit} className="space-y-4">
+                                        <div className="space-y-1">
+                                            <label className="text-sm font-medium text-slate-700">Name</label>
+                                            <Input required value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Flour" />
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <Label>Stock</Label>
-                                                <Input type="number" step="0.1" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value })} required />
+                                            <div className="space-y-1">
+                                                <label className="text-sm font-medium text-slate-700">Stock</label>
+                                                <Input required type="number" step="0.01" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value })} />
                                             </div>
-                                            <div>
-                                                <Select value={formData.unit} onChange={e => setFormData({ ...formData, unit: e.target.value })}>
-                                                    <option value="kg">kg</option>
-                                                    <option value="g">g</option>
-                                                    <option value="l">l</option>
-                                                    <option value="ml">ml</option>
-                                                    <option value="pc">pc</option>
-                                                    <option value="balls">balls</option>
-                                                </Select>
+                                            <div className="space-y-1">
+                                                <label className="text-sm font-medium text-slate-700">Unit</label>
+                                                <select className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20" value={formData.unit} onChange={e => setFormData({ ...formData, unit: e.target.value })}>
+                                                    <option value="kg">kg</option><option value="g">g</option><option value="L">L</option><option value="pcs">pcs</option>
+                                                </select>
                                             </div>
                                         </div>
-                                        <div>
-                                            <Label>Unit Cost ($)</Label>
-                                            <Input type="number" step="0.01" value={formData.cost} onChange={e => setFormData({ ...formData, cost: e.target.value })} required />
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-1">
+                                                <label className="text-sm font-medium text-slate-700">Min Stock</label>
+                                                <Input required type="number" step="0.01" value={formData.minStock} onChange={e => setFormData({ ...formData, minStock: e.target.value })} />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-sm font-medium text-slate-700">Cost per Unit</label>
+                                                <Input type="number" step="0.01" value={formData.cost || ''} onChange={e => setFormData({ ...formData, cost: e.target.value })} placeholder="0.00" />
+                                            </div>
                                         </div>
-                                        <div>
-                                            <Label>Min Stock Alert</Label>
-                                            <Input type="number" step="0.1" value={formData.minStock} onChange={e => setFormData({ ...formData, minStock: e.target.value })} required />
-                                        </div>
-                                        <div className="flex gap-3 justify-end mt-6">
-                                            <Button type="button" variant="ghost" onClick={() => setIsEditing(null)}>Cancel</Button>
-                                            <Button type="submit">Save Changes</Button>
+                                        <div className="pt-2 flex justify-end gap-2">
+                                            <Button type="button" variant="secondary" onClick={() => setIsEditing(null)} className="bg-slate-100 text-slate-600 hover:bg-slate-200">Cancel</Button>
+                                            <Button type="submit">{formData.id ? 'Save Changes' : 'Add Item'}</Button>
                                         </div>
                                     </form>
                                 </CardContent>
@@ -953,166 +1006,135 @@
             );
         };
 
-        // --- MENU/RECIPES VIEW ---
+        // --- MENU VIEW (Modernized) ---
         const Menu = () => {
             const { menu, inventory, addMenu, deleteMenu } = useData();
             const [isEditing, setIsEditing] = useState(null);
-            const [formData, setFormData] = useState({ name: '', price: '', category: '', ingredients: [] });
+            const [formData, setFormData] = useState({ name: '', price: '', category: '', ingredients: [], emoji: '' });
             const [newIng, setNewIng] = useState({ id: '', qty: '' });
 
-            const handleSave = (e) => {
+            const handleSubmit = (e) => {
                 e.preventDefault();
                 addMenu({ ...formData, price: parseFloat(formData.price) });
                 setIsEditing(null);
-                setFormData({ name: '', price: '', category: '', ingredients: [] });
+                setFormData({ name: '', price: '', category: '', ingredients: [], emoji: '' });
             };
 
             const startEdit = (item) => {
-                setFormData(item || { name: '', price: '', category: '', ingredients: [] });
+                setFormData(item || { name: '', price: '', category: '', ingredients: [], emoji: '' });
                 setIsEditing(true);
             };
 
-            const handleDelete = (id) => {
-                if (confirm("Delete this dish?")) deleteMenu(id);
+            const addIng = () => {
+                if (newIng.id && newIng.qty) {
+                    setFormData({ ...formData, ingredients: [...formData.ingredients, { id: parseInt(newIng.id), qty: parseFloat(newIng.qty) }] });
+                    setNewIng({ id: '', qty: '' });
+                }
             };
 
-            const addIngredientToDish = () => {
-                if (!newIng.id || !newIng.qty) return;
-                const ingro = inventory.find(i => i.id === parseInt(newIng.id));
-                if (!ingro) return;
-
-                setFormData({
-                    ...formData,
-                    ingredients: [...formData.ingredients, { id: parseInt(newIng.id), qty: parseFloat(newIng.qty) }]
-                });
-                setNewIng({ id: '', qty: '' });
-            };
-
-            const removeIngredientFromDish = (idx) => {
-                const newIngs = [...formData.ingredients];
-                newIngs.splice(idx, 1);
-                setFormData({ ...formData, ingredients: newIngs });
+            const removeIng = (idx) => {
+                setFormData({ ...formData, ingredients: formData.ingredients.filter((_, i) => i !== idx) });
             };
 
             return (
-                <div className="space-y-6 fade-in pb-10">
+                <div className="space-y-6 fade-in pb-20">
                     <div className="flex justify-between items-center">
                         <h2 className="text-2xl font-bold text-slate-800">Menu & Recipes</h2>
-                        <Button onClick={() => startEdit(null)}><Icon name="plus" size={18} /> Add Dish</Button>
+                        <Button onClick={() => startEdit(null)}><Icon name="plus" size={18} /> Add Item</Button>
                     </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {menu.map(item => (
-                            <Card key={item.id} className="group hover:border-primary/50 transition-colors relative">
-                                <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 p-1 rounded-lg z-10 shadow-sm border border-slate-100">
-                                    <button onClick={(e) => { e.stopPropagation(); startEdit(item); }} className="text-slate-400 hover:text-primary"><Icon name="edit-2" size={16} /></button>
-                                    <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="text-slate-400 hover:text-danger"><Icon name="trash-2" size={16} /></button>
-                                </div>
-                                <CardHeader>
+                            <Card key={item.id} className="hover:shadow-lg transition-shadow group relative">
+                                <CardHeader className="pb-2">
                                     <div className="flex justify-between items-start">
-                                        <CardTitle>{item.name}</CardTitle>
-                                        <Badge variant="primary">${item.price}</Badge>
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 bg-orange-50 rounded-lg flex items-center justify-center text-xl">{item.emoji || '🍽️'}</div>
+                                            <div>
+                                                <CardTitle className="text-lg">{item.name}</CardTitle>
+                                                <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full mt-1 inline-block">{item.category}</span>
+                                            </div>
+                                        </div>
+                                        <span className="font-bold text-lg text-primary">${item.price}</span>
                                     </div>
-                                    <span className="text-xs text-slate-500">{item.category}</span>
                                 </CardHeader>
                                 <CardContent>
-                                    <h4 className="text-sm font-semibold mb-2">Recipe (Ingredients):</h4>
-                                    <ul className="text-sm space-y-1 text-slate-600">
-                                        {item.ingredients.map((ing, idx) => {
-                                            const invItem = inventory.find(i => i.id === ing.id);
-                                            return (
-                                                <li key={idx} className="flex justify-between">
-                                                    <span>{invItem ? invItem.name : 'Unknown'}</span>
-                                                    <span className="text-slate-400">{ing.qty} {invItem ? invItem.unit : ''}</span>
-                                                </li>
-                                            );
-                                        })}
-                                        {item.ingredients.length === 0 && <li className="text-slate-400 italic">No ingredients listed</li>}
-                                    </ul>
+                                    <div className="mb-4 bg-slate-50/50 p-3 rounded-lg border border-slate-100/50">
+                                        <p className="text-xs font-semibold text-slate-500 mb-1 uppercase tracking-wider">Recipe</p>
+                                        <ul className="text-sm text-slate-600 space-y-1">
+                                            {item.ingredients?.map((ing, i) => {
+                                                const invItem = inventory.find(inv => inv.id === ing.id);
+                                                return <li key={i} className="flex justify-between text-xs"><span>{invItem?.name || 'Unknown'}</span> <span className="font-mono text-slate-400">{ing.qty} {invItem?.unit}</span></li>;
+                                            })}
+                                            {(!item.ingredients || item.ingredients.length === 0) && <li className="text-slate-400 italic text-xs">No ingredients linked</li>}
+                                        </ul>
+                                    </div>
+                                    <div className="flex justify-end gap-2 border-t border-slate-50 pt-3">
+                                        <Button variant="ghost" size="sm" onClick={() => startEdit(item)} className="text-slate-400 hover:text-primary"><Icon name="edit-2" size={16} /></Button>
+                                        <Button variant="ghost" size="sm" onClick={() => { if (confirm("Delete this item?")) deleteMenu(item.id); }} className="text-slate-400 hover:text-red-500"><Icon name="trash-2" size={16} /></Button>
+                                    </div>
                                 </CardContent>
                             </Card>
                         ))}
                     </div>
 
                     {isEditing && (
-                        <div className="fixed inset-0 bg-black/20 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-                            <Card className="w-full max-w-2xl animate-in fade-in zoom-in-95 duration-200 shadow-2xl max-h-[90vh] overflow-y-auto">
-                                <CardHeader><CardTitle>{formData.id ? 'Edit Dish' : 'New Dish'}</CardTitle></CardHeader>
-                                <CardContent>
-                                    <form onSubmit={handleSave} className="space-y-4">
+                        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50 backdrop-blur-sm animate-in fade-in">
+                            <Card className="w-full max-w-lg shadow-2xl">
+                                <CardHeader className="flex flex-row items-center justify-between border-b border-slate-100 pb-4"><CardTitle>{formData.id ? 'Edit Item' : 'New Item'}</CardTitle>
+                                    <button onClick={() => setIsEditing(null)} className="text-slate-400 hover:text-slate-600"><Icon name="x" size={20} /></button>
+                                </CardHeader>
+                                <CardContent className="pt-4">
+                                    <form onSubmit={handleSubmit} className="space-y-4">
                                         <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <Label>Dish Name</Label>
-                                                <Input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required placeholder="e.g. Pasta Carbonara" />
+                                            <div className="space-y-1">
+                                                <label className="text-sm font-medium text-slate-700">Name</label>
+                                                <Input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required />
                                             </div>
-                                            <div>
-                                                <Label>Category</Label>
-                                                <div className="relative">
-                                                    <input
-                                                        list="categories"
-                                                        value={formData.category}
-                                                        onChange={e => setFormData({ ...formData, category: e.target.value })}
-                                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
-                                                        placeholder="Select or type..."
-                                                        required
-                                                    />
-                                                    <datalist id="categories">
-                                                        <option value="Pizza" />
-                                                        <option value="Pasta" />
-                                                        <option value="Salad" />
-                                                        <option value="Sides" />
-                                                        <option value="Beverages" />
-                                                        <option value="Dessert" />
-                                                    </datalist>
-                                                </div>
+                                            <div className="space-y-1">
+                                                <label className="text-sm font-medium text-slate-700">Category</label>
+                                                <Input value={formData.category} onChange={e => setFormData({ ...formData, category: e.target.value })} list="categories" required />
+                                                <datalist id="categories"><option value="Starters" /><option value="Main Course" /><option value="Drinks" /><option value="Desserts" /></datalist>
                                             </div>
                                         </div>
-                                        <div>
-                                            <Label>Price ($)</Label>
-                                            <Input type="number" step="0.01" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value })} required placeholder="0.00" />
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="space-y-1">
+                                                <label className="text-sm font-medium text-slate-700">Price ($)</label>
+                                                <Input type="number" step="0.01" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value })} required />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <label className="text-sm font-medium text-slate-700">Emoji icon</label>
+                                                <Input value={formData.emoji} onChange={e => setFormData({ ...formData, emoji: e.target.value })} placeholder="🍔" />
+                                            </div>
                                         </div>
 
-                                        <div className="border-t border-slate-100 pt-4 mt-4">
-                                            <Label>Recipe Ingredients</Label>
-                                            <div className="flex gap-2 mb-3 items-end bg-slate-50/50 p-3 rounded-lg border border-slate-100">
-                                                <div className="flex-1">
-                                                    <span className="text-xs text-slate-500 mb-1 block font-medium">Ingredient</span>
-                                                    <Select value={newIng.id} onChange={e => setNewIng({ ...newIng, id: e.target.value })}>
-                                                        <option value="">Select Ingredient...</option>
-                                                        {inventory.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
-                                                    </Select>
-                                                </div>
-                                                <div className="w-24">
-                                                    <span className="text-xs text-slate-500 mb-1 block font-medium">Qty</span>
-                                                    <Input type="number" step="0.01" value={newIng.qty} onChange={e => setNewIng({ ...newIng, qty: e.target.value })} placeholder="0.0" />
-                                                </div>
-                                                <div className="mb-px">
-                                                    <Button type="button" onClick={addIngredientToDish} variant="secondary" size="md">Add</Button>
-                                                </div>
+                                        <div className="border-t border-slate-100 pt-4">
+                                            <label className="text-sm font-medium text-slate-700 mb-2 block">Recipe Ingredients</label>
+                                            <div className="flex gap-2 mb-2">
+                                                <select className="flex-1 h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20" value={newIng.id} onChange={e => setNewIng({ ...newIng, id: e.target.value })}>
+                                                    <option value="">Select Ingredient</option>
+                                                    {inventory.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
+                                                </select>
+                                                <Input type="number" step="0.01" placeholder="Qty" value={newIng.qty} onChange={e => setNewIng({ ...newIng, qty: e.target.value })} className="w-24" />
+                                                <Button type="button" onClick={addIng} type="button"><Icon name="plus" size={16} /></Button>
                                             </div>
-
-                                            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                                                {formData.ingredients.length === 0 && <p className="text-xs text-slate-400 text-center py-4 border border-slate-100 border-dashed rounded-lg bg-slate-50/50">No ingredients added yet.</p>}
-                                                {formData.ingredients.map((ing, idx) => {
-                                                    const invItem = inventory.find(i => i.id === ing.id);
-                                                    return (
-                                                        <div key={idx} className="flex justify-between items-center bg-white p-2.5 rounded-lg border border-slate-200 shadow-sm text-sm group hover:border-primary/30 transition-colors">
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="w-6 h-6 rounded bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-bold">{idx + 1}</div>
-                                                                <span className="font-medium text-slate-700">{invItem ? invItem.name : 'Unknown Item'}</span>
-                                                            </div>
-                                                            <div className="flex items-center gap-4">
-                                                                <span className="text-slate-500 font-mono bg-slate-50 px-2 py-0.5 rounded border border-slate-100">{ing.qty} {invItem ? invItem.unit : ''}</span>
-                                                                <button type="button" onClick={() => removeIngredientFromDish(idx)} className="text-slate-300 hover:text-red-500 transition-colors"><Icon name="trash-2" size={16} /></button>
-                                                            </div>
+                                            <div className="bg-slate-50 p-2 rounded-lg max-h-32 overflow-y-auto space-y-1 border border-slate-100">
+                                                {formData.ingredients.length === 0 && <p className="text-xs text-slate-400 text-center py-2">No ingredients added.</p>}
+                                                {formData.ingredients.map((ing, idx) => (
+                                                    <div key={idx} className="flex justify-between items-center text-sm bg-white p-2 rounded shadow-sm">
+                                                        <span>{inventory.find(i => i.id === ing.id)?.name || 'Unknown'}</span>
+                                                        <div className="flex gap-3 items-center">
+                                                            <span className="font-mono text-slate-500 bg-slate-100 px-1.5 rounded text-xs">{ing.qty}</span>
+                                                            <button type="button" onClick={() => removeIng(idx)} className="text-slate-400 hover:text-red-500"><Icon name="x" size={14} /></button>
                                                         </div>
-                                                    )
-                                                })}
+                                                    </div>
+                                                ))}
                                             </div>
                                         </div>
 
-                                        <div className="flex gap-3 justify-end pt-4 border-t border-slate-100">
-                                            <Button type="button" variant="ghost" onClick={() => setIsEditing(null)}>Cancel</Button>
-                                            <Button type="submit">Save Dish</Button>
+                                        <div className="flex justify-end gap-2 mt-4 pt-2 border-t border-slate-100">
+                                            <Button type="button" variant="secondary" onClick={() => setIsEditing(null)} className="bg-slate-100 text-slate-600 hover:bg-slate-200">Cancel</Button>
+                                            <Button type="submit">Save Item</Button>
                                         </div>
                                     </form>
                                 </CardContent>
@@ -1123,59 +1145,172 @@
             );
         };
 
-        // --- ORDERS HISTORY VIEW ---
+        // --- KITCHEN VIEW (Modernized) ---
+        const Kitchen = () => {
+            const { orders, updateOrderStatus, addNotification } = useData();
+            const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled').sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            const nextStatus = (current) => {
+                if (current === 'pending') return 'preparing';
+                if (current === 'preparing') return 'ready';
+                if (current === 'ready') return 'completed';
+                return current;
+            };
+
+            const handleStatusUpdate = (orderId, newStatus) => {
+                updateOrderStatus(orderId, newStatus);
+                if (newStatus === 'ready') addNotification("Order Ready", `Order #${orderId.slice(0, 4)} is ready for pickup!`, "success");
+            };
+
+            return (
+                <div className="space-y-6 fade-in pb-20">
+                    <div className="flex justify-between items-center">
+                        <h2 className="text-2xl font-bold text-slate-800">Kitchen Display</h2>
+                        <span className="bg-orange-100 text-orange-800 text-xs font-bold px-3 py-1 rounded-full">{activeOrders.length} Active</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {activeOrders.length === 0 && (
+                            <div className="col-span-full text-center py-12 bg-slate-50 rounded-xl border border-slate-100 border-dashed">
+                                <Icon name="coffee" size={48} className="mx-auto text-slate-300 mb-3" />
+                                <p className="text-slate-500 font-medium">All caught up!</p>
+                                <p className="text-slate-400 text-sm">No active orders in the kitchen.</p>
+                            </div>
+                        )}
+                        {activeOrders.map(order => (
+                            <Card key={order.id} className={`border-t-4 ${order.status === 'ready' ? 'border-t-emerald-500 bg-emerald-50/30' : order.status === 'preparing' ? 'border-t-blue-500' : 'border-t-orange-500'}`}>
+                                <CardHeader className="pb-2">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <h3 className="font-bold text-lg text-slate-800">#{order.id.slice(0, 4)}</h3>
+                                            <p className="text-xs text-slate-500">{new Date(order.date).toLocaleTimeString()}</p>
+                                        </div>
+                                        <Badge variant={order.status === 'ready' ? 'success' : order.status === 'preparing' ? 'info' : 'warning'}>
+                                            {order.status.toUpperCase()}
+                                        </Badge>
+                                    </div>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="space-y-2 mb-4">
+                                        {order.items.map((item, i) => (
+                                            <div key={i} className="flex justify-between items-center bg-white p-2 rounded border border-slate-100 shadow-sm">
+                                                <span className="font-medium text-slate-700">{item.name}</span>
+                                                <span className="font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded text-sm">x{item.qty}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="pt-3 border-t border-slate-100/50 flex gap-2">
+                                        {order.status !== 'ready' && (
+                                            <Button onClick={() => handleStatusUpdate(order.id, nextStatus(order.status))} className="w-full flex justify-center gap-2">
+                                                {order.status === 'pending' ? 'Start Cooking' : 'Mark Ready'} <Icon name="arrow-right" size={16} />
+                                            </Button>
+                                        )}
+                                        {order.status === 'ready' && (
+                                            <Button variant="success" onClick={() => handleStatusUpdate(order.id, 'completed')} className="w-full flex justify-center gap-2">
+                                                <Icon name="check" size={16} /> Complete Order
+                                            </Button>
+                                        )}
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        // --- ORDERS HISTORY VIEW (Modernized) ---
         const OrdersHistory = () => {
             const { orders } = useData();
             const completedOrders = orders.filter(o => o.status === 'completed' || o.status === 'cancelled').sort((a, b) => new Date(b.date) - new Date(a.date));
 
             return (
-                <div className="space-y-6 fade-in pb-10">
+                <div className="space-y-6 fade-in pb-20">
                     <h2 className="text-2xl font-bold text-slate-800">Orders History</h2>
-                    <Card>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-left text-sm">
-                                <thead className="bg-slate-50 text-slate-500 border-b border-slate-100">
-                                    <tr>
-                                        <th className="p-4 font-medium">Order ID</th>
-                                        <th className="p-4 font-medium">Date & Time</th>
-                                        <th className="p-4 font-medium">Items</th>
-                                        <th className="p-4 font-medium">Total</th>
-                                        <th className="p-4 font-medium">Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {completedOrders.length === 0 && (
+
+                    {/* Desktop Table View */}
+                    <div className="hidden md:block">
+                        <Card className="overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left text-sm">
+                                    <thead className="bg-slate-50 text-slate-500 border-b border-slate-100">
                                         <tr>
-                                            <td colSpan="5" className="p-8 text-center text-slate-400">No completed orders yet.</td>
+                                            <th className="p-4 font-medium">Order ID</th>
+                                            <th className="p-4 font-medium">Date & Time</th>
+                                            <th className="p-4 font-medium">Items</th>
+                                            <th className="p-4 font-medium text-right">Total</th>
+                                            <th className="p-4 font-medium text-center">Status</th>
                                         </tr>
-                                    )}
-                                    {completedOrders.map(order => (
-                                        <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
-                                            <td className="p-4 font-mono font-medium text-slate-700">#{order.id.split('-')[1]}</td>
-                                            <td className="p-4 text-slate-600">
-                                                {new Date(order.date).toLocaleDateString()} <span className="text-xs text-slate-400">{new Date(order.date).toLocaleTimeString()}</span>
-                                            </td>
-                                            <td className="p-4">
-                                                <div className="flex flex-col gap-1">
-                                                    {order.items.map((item, i) => (
-                                                        <span key={i} className="text-slate-600 text-xs">
-                                                            <span className="font-bold text-slate-800">{item.qty}x</span> {item.name}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </td>
-                                            <td className="p-4 font-bold text-slate-800">${order.total.toFixed(2)}</td>
-                                            <td className="p-4">
-                                                <Badge variant={order.status === 'completed' ? 'success' : 'danger'}>
-                                                    {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
-                                                </Badge>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </Card>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {completedOrders.length === 0 && (
+                                            <tr>
+                                                <td colSpan="5" className="p-8 text-center text-slate-400">No completed orders yet.</td>
+                                            </tr>
+                                        )}
+                                        {completedOrders.map(order => (
+                                            <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
+                                                <td className="p-4 font-mono font-medium text-slate-700">#{order.id.slice(0, 8)}</td>
+                                                <td className="p-4 text-slate-600">
+                                                    {new Date(order.date).toLocaleDateString()} <span className="text-xs text-slate-400 block">{new Date(order.date).toLocaleTimeString()}</span>
+                                                </td>
+                                                <td className="p-4">
+                                                    <div className="flex flex-col gap-1">
+                                                        {order.items.map((item, i) => (
+                                                            <span key={i} className="text-slate-600 text-xs">
+                                                                <span className="font-bold text-slate-800">{item.qty}x</span> {item.name}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </td>
+                                                <td className="p-4 font-bold text-slate-800 text-right">${order.total.toFixed(2)}</td>
+                                                <td className="p-4 text-center">
+                                                    <Badge variant={order.status === 'completed' ? 'success' : 'danger'}>
+                                                        {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                                                    </Badge>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </Card>
+                    </div>
+
+                    {/* Mobile Card View */}
+                    <div className="md:hidden space-y-4">
+                        {completedOrders.length === 0 && (
+                            <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-xl border border-slate-100 border-dashed">
+                                No completed orders yet.
+                            </div>
+                        )}
+                        {completedOrders.map(order => (
+                            <Card key={order.id} className="active:scale-[0.99] transition-transform">
+                                <CardContent className="p-4">
+                                    <div className="flex justify-between items-start mb-3">
+                                        <div>
+                                            <span className="font-mono text-xs text-slate-400">#{order.id.slice(0, 8)}</span>
+                                            <p className="text-xs text-slate-500">{new Date(order.date).toLocaleString()}</p>
+                                        </div>
+                                        <Badge variant={order.status === 'completed' ? 'success' : 'danger'}>
+                                            {order.status.toUpperCase()}
+                                        </Badge>
+                                    </div>
+                                    <div className="space-y-1 mb-3 bg-slate-50 p-2 rounded border border-slate-100">
+                                        {order.items.map((item, i) => (
+                                            <div key={i} className="flex justify-between text-sm">
+                                                <span className="text-slate-600"><span className="font-bold text-slate-800">{item.qty}x</span> {item.name}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="flex justify-between items-center border-t border-slate-50 pt-3">
+                                        <span className="text-sm font-medium text-slate-500">Total</span>
+                                        <span className="text-lg font-bold text-slate-800">${order.total.toFixed(2)}</span>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
                 </div>
             );
         };
@@ -1262,9 +1397,9 @@
             );
         };
 
-        // --- PURCHASE ORDERS VIEW ---
+        // --- PURCHASE ORDERS VIEW (Modernized) ---
         const PurchaseOrders = () => {
-            const { purchaseOrders, inventory, addPO, deletePO, receivePO, updatePODate } = useData();
+            const { purchaseOrders, inventory, addPO, deletePO, receivePO } = useData();
             const [isAdding, setIsAdding] = useState(false);
             const [formData, setFormData] = useState({ vendor: '', deliveryDate: '', items: [] });
             const [newItem, setNewItem] = useState({ id: '', qty: '', unitCost: '' });
@@ -1290,15 +1425,13 @@
             };
 
             const removeItem = (idx) => {
-                const newItems = [...formData.items];
-                newItems.splice(idx, 1);
-                setFormData({ ...formData, items: newItems });
+                setFormData({ ...formData, items: formData.items.filter((_, i) => i !== idx) });
             };
 
             const sortedPOs = [...purchaseOrders].sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate));
 
             return (
-                <div className="space-y-6 fade-in pb-10">
+                <div className="space-y-6 fade-in pb-20">
                     <div className="flex justify-between items-center">
                         <h2 className="text-2xl font-bold text-slate-800">Purchase Orders</h2>
                         <Button onClick={() => setIsAdding(true)}><Icon name="plus" size={18} /> New Order</Button>
@@ -1311,10 +1444,10 @@
                             </div>
                         )}
                         {sortedPOs.map(po => (
-                            <Card key={po.id} className="relative overflow-hidden">
-                                <div className={`absolute left-0 top-0 bottom-0 w-1 ${po.status === 'received' ? 'bg-green-500' : po.status === 'cancelled' ? 'bg-red-500' : 'bg-orange-500'}`}></div>
-                                <CardContent className="pl-6">
-                                    <div className="flex justify-between items-start mb-4">
+                            <Card key={po.id} className="relative overflow-hidden hover:shadow-md transition-all">
+                                <div className={`absolute left-0 top-0 bottom-0 w-1 ${po.status === 'received' ? 'bg-emerald-500' : po.status === 'cancelled' ? 'bg-red-500' : 'bg-orange-500'}`}></div>
+                                <CardContent className="pl-6 pt-6">
+                                    <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
                                         <div>
                                             <div className="flex items-center gap-3 mb-1">
                                                 <h3 className="font-bold text-lg text-slate-800">{po.vendor}</h3>
@@ -1322,16 +1455,28 @@
                                                     {po.status.toUpperCase()}
                                                 </Badge>
                                             </div>
-                                            <p className="text-sm text-slate-500">Order ID: {po.id}</p>
-                                            <p className="text-sm text-slate-500">Delivery Date: <span className="font-medium text-slate-700">{new Date(po.deliveryDate).toLocaleDateString()}</span></p>
+                                            <div className="flex gap-4 text-sm text-slate-500">
+                                                <span>Order #{po.id.slice(0, 8)}</span>
+                                                <span>•</span>
+                                                <span>Delivery: <span className="font-medium text-slate-700">{new Date(po.deliveryDate).toLocaleDateString()}</span></span>
+                                            </div>
                                         </div>
-                                        {po.status === 'pending' && (
-                                            <Button variant="danger" size="sm" onClick={() => { if (confirm("Cancel this PO?")) deletePO(po.id); }}>Cancel Order</Button>
-                                        )}
+                                        <div className="flex gap-2 w-full md:w-auto">
+                                            {po.status === 'pending' && (
+                                                <>
+                                                    <Button variant="secondary" size="sm" onClick={() => { if (confirm("Mark as Received? Stock will be updated.")) receivePO(po.id); }} className="flex-1 md:flex-none">
+                                                        <Icon name="check-circle" size={16} /> Receive
+                                                    </Button>
+                                                    <Button variant="danger" size="sm" onClick={() => { if (confirm("Cancel this PO?")) deletePO(po.id); }} className="flex-1 md:flex-none">
+                                                        <Icon name="x-circle" size={16} /> Cancel
+                                                    </Button>
+                                                </>
+                                            )}
+                                        </div>
                                     </div>
 
-                                    <div className="bg-slate-50 rounded-lg p-3 text-sm">
-                                        <div className="grid grid-cols-12 font-medium text-slate-500 mb-2 px-2">
+                                    <div className="bg-slate-50 rounded-lg p-3 text-sm border border-slate-100">
+                                        <div className="grid grid-cols-12 font-medium text-slate-500 mb-2 px-2 text-xs uppercase tracking-wider">
                                             <div className="col-span-6">Item</div>
                                             <div className="col-span-2 text-center">Qty</div>
                                             <div className="col-span-2 text-center">Cost</div>
@@ -1341,7 +1486,7 @@
                                             {po.items.map((item, idx) => {
                                                 const invItem = inventory.find(i => i.id === item.id);
                                                 return (
-                                                    <div key={idx} className="grid grid-cols-12 items-center px-2 py-1 border-b border-slate-100 last:border-0">
+                                                    <div key={idx} className="grid grid-cols-12 items-center px-2 py-1.5 border-b border-slate-200/50 last:border-0 hover:bg-slate-100 transition-colors rounded">
                                                         <div className="col-span-6 font-medium text-slate-700">{invItem ? invItem.name : 'Unknown'}</div>
                                                         <div className="col-span-2 text-center text-slate-600">{item.qty} {invItem?.unit}</div>
                                                         <div className="col-span-2 text-center text-slate-600">${item.unitCost.toFixed(2)}</div>
@@ -1350,8 +1495,9 @@
                                                 );
                                             })}
                                         </div>
-                                        <div className="mt-3 pt-2 border-t border-slate-200 flex justify-end">
-                                            <span className="font-bold text-slate-800">Total: ${po.items.reduce((sum, i) => sum + (i.qty * i.unitCost), 0).toFixed(2)}</span>
+                                        <div className="mt-3 pt-3 border-t border-slate-200 flex justify-end items-center gap-2">
+                                            <span className="text-slate-500 text-xs uppercase">Total Amount</span>
+                                            <span className="font-bold text-lg text-slate-800">${po.items.reduce((sum, i) => sum + (i.qty * i.unitCost), 0).toFixed(2)}</span>
                                         </div>
                                     </div>
                                 </CardContent>
@@ -1360,68 +1506,96 @@
                     </div>
 
                     {isAdding && (
-                        <div className="fixed inset-0 bg-black/20 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-                            <Card className="w-full max-w-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-                                <CardHeader><CardTitle>Create Purchase Order</CardTitle></CardHeader>
-                                <CardContent>
-                                    <form onSubmit={handleSave} className="space-y-4">
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <Label>Vendor Name</Label>
+                        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50 backdrop-blur-sm animate-in fade-in">
+                            <Card className="w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
+                                <CardHeader className="flex flex-row items-center justify-between border-b border-slate-100 pb-4">
+                                    <CardTitle>Create Purchase Order</CardTitle>
+                                    <button onClick={() => setIsAdding(false)} className="text-slate-400 hover:text-slate-600"><Icon name="x" size={20} /></button>
+                                </CardHeader>
+                                <CardContent className="overflow-y-auto pt-4">
+                                    <form onSubmit={handleSave} className="space-y-6">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="space-y-1">
+                                                <label className="text-sm font-medium text-slate-700">Vendor Name</label>
                                                 <Input value={formData.vendor} onChange={e => setFormData({ ...formData, vendor: e.target.value })} required placeholder="e.g. Sysco" />
                                             </div>
-                                            <div>
-                                                <Label>Delivery Date</Label>
+                                            <div className="space-y-1">
+                                                <label className="text-sm font-medium text-slate-700">Delivery Date</label>
                                                 <Input type="date" value={formData.deliveryDate} onChange={e => setFormData({ ...formData, deliveryDate: e.target.value })} required />
                                             </div>
                                         </div>
 
-                                        <div className="border-t border-slate-100 pt-4 mt-4">
-                                            <Label>Order Items</Label>
-                                            <div className="flex gap-2 mb-3 items-end bg-slate-50/50 p-3 rounded-lg border border-slate-100">
-                                                <div className="flex-1">
+                                        <div className="border rounded-xl border-slate-200 p-4 bg-slate-50/50">
+                                            <label className="text-sm font-bold text-slate-700 mb-3 block">Order Items</label>
+
+                                            {/* Add Item Row */}
+                                            <div className="flex flex-col md:flex-row gap-2 mb-4 items-end bg-white p-3 rounded-lg border border-slate-200">
+                                                <div className="flex-1 w-full">
                                                     <span className="text-xs text-slate-500 mb-1 block font-medium">Ingredient</span>
-                                                    <Select value={newItem.id} onChange={e => setNewItem({ ...newItem, id: e.target.value })}>
+                                                    <select className="w-full h-10 rounded-md border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20" value={newItem.id} onChange={e => setNewItem({ ...newItem, id: e.target.value })}>
                                                         <option value="">Select Item...</option>
                                                         {inventory.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
-                                                    </Select>
+                                                    </select>
                                                 </div>
-                                                <div className="w-24">
+                                                <div className="w-full md:w-24">
                                                     <span className="text-xs text-slate-500 mb-1 block font-medium">Qty</span>
-                                                    <Input type="number" step="0.01" value={newItem.qty} onChange={e => setNewItem({ ...newItem, qty: e.target.value })} placeholder="0.0" />
+                                                    <Input type="number" step="0.01" value={newItem.qty} onChange={e => setNewItem({ ...newItem, qty: e.target.value })} placeholder="0" />
                                                 </div>
-                                                <div className="w-24">
-                                                    <span className="text-xs text-slate-500 mb-1 block font-medium">Unit Cost</span>
-                                                    <Input type="number" step="0.01" value={newItem.unitCost} onChange={e => setNewItem({ ...newItem, unitCost: e.target.value })} placeholder="$0.00" />
+                                                <div className="w-full md:w-28">
+                                                    <span className="text-xs text-slate-500 mb-1 block font-medium">Unit Cost ($)</span>
+                                                    <Input type="number" step="0.01" value={newItem.unitCost} onChange={e => setNewItem({ ...newItem, unitCost: e.target.value })} placeholder="0.00" />
                                                 </div>
-                                                <div className="mb-px">
-                                                    <Button type="button" onClick={addItem} variant="secondary" size="md">Add</Button>
+                                                <div className="md:mb-px">
+                                                    <Button type="button" onClick={addItem} size="md" className="w-full md:w-auto"><Icon name="plus" size={16} /> Add</Button>
                                                 </div>
                                             </div>
 
-                                            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                                                {formData.items.length === 0 && <p className="text-xs text-slate-400 text-center py-4 border border-slate-100 border-dashed rounded-lg bg-slate-50/50">No items added yet.</p>}
+                                            {/* Items List */}
+                                            <div className="space-y-2 max-h-48 overflow-y-auto">
+                                                {formData.items.length === 0 && (
+                                                    <div className="text-center py-6 text-slate-400 text-sm border-2 border-dashed border-slate-200 rounded-lg">
+                                                        No items added to this order yet.
+                                                    </div>
+                                                )}
                                                 {formData.items.map((item, idx) => {
                                                     const invItem = inventory.find(i => i.id === item.id);
                                                     return (
-                                                        <div key={idx} className="flex justify-between items-center bg-white p-2.5 rounded-lg border border-slate-200 shadow-sm text-sm">
-                                                            <div className="flex items-center gap-3">
+                                                        <div key={idx} className="flex flex-wrap md:flex-nowrap justify-between items-center bg-white p-3 rounded-lg border border-slate-100 shadow-sm text-sm group">
+                                                            <div className="flex items-center gap-3 w-full md:w-auto">
+                                                                <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-bold">{idx + 1}</div>
                                                                 <span className="font-medium text-slate-700">{invItem ? invItem.name : 'Unknown Item'}</span>
                                                             </div>
-                                                            <div className="flex items-center gap-4">
-                                                                <span className="text-slate-500 text-xs">{item.qty} {invItem?.unit} @ ${item.unitCost}</span>
-                                                                <span className="font-medium text-slate-800">${(item.qty * item.unitCost).toFixed(2)}</span>
-                                                                <button type="button" onClick={() => removeItem(idx)} className="text-slate-300 hover:text-red-500 transition-colors"><Icon name="trash-2" size={16} /></button>
+                                                            <div className="flex items-center gap-4 mt-2 md:mt-0 ml-9 md:ml-0 w-full md:w-auto justify-between md:justify-end">
+                                                                <div className="text-right">
+                                                                    <span className="block text-xs text-slate-400">Qty</span>
+                                                                    <span className="font-medium text-slate-700">{item.qty} {invItem?.unit}</span>
+                                                                </div>
+                                                                <div className="text-right">
+                                                                    <span className="block text-xs text-slate-400">Cost</span>
+                                                                    <span className="font-medium text-slate-700">${item.unitCost}</span>
+                                                                </div>
+                                                                <div className="text-right w-20">
+                                                                    <span className="block text-xs text-slate-400">Total</span>
+                                                                    <span className="font-bold text-slate-800">${(item.qty * item.unitCost).toFixed(2)}</span>
+                                                                </div>
+                                                                <button type="button" onClick={() => removeItem(idx)} className="text-slate-300 hover:text-red-500 p-2"><Icon name="x" size={18} /></button>
                                                             </div>
                                                         </div>
                                                     )
                                                 })}
                                             </div>
+
+                                            {formData.items.length > 0 && (
+                                                <div className="mt-4 pt-3 border-t border-slate-200 flex justify-end items-center gap-3">
+                                                    <span className="text-slate-500 font-medium">Order Total:</span>
+                                                    <span className="text-xl font-bold text-slate-800">${formData.items.reduce((sum, i) => sum + (i.qty * i.unitCost), 0).toFixed(2)}</span>
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div className="flex gap-3 justify-end pt-4 border-t border-slate-100">
-                                            <Button type="button" variant="ghost" onClick={() => setIsAdding(false)}>Cancel</Button>
-                                            <Button type="submit">Create Order</Button>
+                                            <Button type="button" variant="secondary" onClick={() => setIsAdding(false)} className="bg-slate-100 text-slate-600 hover:bg-slate-200">Cancel</Button>
+                                            <Button type="submit" disabled={formData.items.length === 0}>Create Purchase Order</Button>
                                         </div>
                                     </form>
                                 </CardContent>
@@ -1432,51 +1606,116 @@
             );
         };
 
-        // --- DETAILS / SETTINGS / RESTOCK VIEW ---
+        // --- SETTINGS VIEW (Modernized) ---
         const Settings = () => {
-            const { resetData, addExpense } = useData();
-            const [expense, setExpense] = useState({ desc: '', amount: '' });
+            const { resetData } = useData();
+            const [username, setUsername] = useState(localStorage.getItem('rb_user') || 'Guest');
+            const scriptUrl = localStorage.getItem('rb_script_url');
 
-            const handleAddExpense = (e) => {
-                e.preventDefault();
-                addExpense(expense.amount, expense.desc);
-                setExpense({ desc: '', amount: '' });
-                addNotification("Expense Logged", `Logged expense: $${expense.amount}`, "info");
+            const handleLogout = () => {
+                if (confirm("Log out?")) {
+                    localStorage.removeItem('rb_user');
+                    window.location.reload();
+                }
+            };
+
+            const handleBackup = () => {
+                const data = JSON.stringify(localStorage);
+                const blob = new Blob([data], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `restrobuddy_backup_${new Date().toISOString().split('T')[0]}.json`;
+                a.click();
             };
 
             return (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 fade-in">
-                    <Card>
-                        <CardHeader><CardTitle>Cloud Integration</CardTitle></CardHeader>
-                        <CardContent>
-                            <div className="flex items-center gap-2 text-green-600 bg-green-50 p-3 rounded-lg border border-green-100">
-                                <Icon name="check-circle" size={20} />
-                                <span className="font-medium">Connected to Google Sheets</span>
+                <div className="max-w-4xl mx-auto space-y-8 fade-in pb-20">
+                    <div>
+                        <h2 className="text-2xl font-bold text-slate-800">Settings</h2>
+                        <p className="text-slate-500 text-sm">Manage your account and application preferences.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {/* Profile Card */}
+                        <Card className="md:col-span-1">
+                            <CardHeader><CardTitle>Profile</CardTitle></CardHeader>
+                            <CardContent>
+                                <div className="flex flex-col items-center text-center py-4">
+                                    <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center text-3xl mb-3">
+                                        👤
+                                    </div>
+                                    <h3 className="font-bold text-lg text-slate-800">{username.charAt(0).toUpperCase() + username.slice(1)}</h3>
+                                    <p className="text-xs text-slate-500 mb-4">Store Manager</p>
+                                    <Button variant="secondary" onClick={handleLogout} className="w-full border border-slate-200">
+                                        <Icon name="log-out" size={16} /> Logout
+                                    </Button>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* Main Settings Column */}
+                        <div className="md:col-span-2 space-y-6">
+                            {/* Cloud Integration */}
+                            <Card>
+                                <CardHeader><CardTitle>Cloud Synchronization</CardTitle></CardHeader>
+                                <CardContent>
+                                    <div className="flex items-start gap-4">
+                                        <div className={`p-3 rounded-xl ${scriptUrl ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>
+                                            <Icon name="cloud" size={24} />
+                                        </div>
+                                        <div className="flex-1">
+                                            <h4 className="font-semibold text-slate-800">Google Sheets Backend</h4>
+                                            <p className="text-sm text-slate-500 mb-2">
+                                                {scriptUrl
+                                                    ? 'Connected and syncing data in real-time.'
+                                                    : 'Not connected. running in offline mode.'}
+                                            </p>
+                                            {scriptUrl && (
+                                                <div className="text-xs font-mono bg-slate-50 p-2 rounded border border-slate-100 truncate text-slate-400">
+                                                    {scriptUrl}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center">
+                                            <span className={`flex h-3 w-3 rounded-full ${scriptUrl ? 'bg-emerald-500' : 'bg-slate-300'}`}></span>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Data Management */}
+                            <Card>
+                                <CardHeader><CardTitle>Data Management</CardTitle></CardHeader>
+                                <CardContent className="space-y-4">
+                                    <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+                                        <div>
+                                            <h4 className="font-medium text-slate-700">Export Backup</h4>
+                                            <p className="text-xs text-slate-500">Download a JSON file of your local data.</p>
+                                        </div>
+                                        <Button variant="secondary" onClick={handleBackup}><Icon name="download" size={16} /> Export</Button>
+                                    </div>
+
+                                    <div className="border-t border-slate-100 pt-4">
+                                        <h4 className="font-medium text-red-600 mb-2 flex items-center gap-2"><Icon name="alert-triangle" size={16} /> Danger Zone</h4>
+                                        <p className="text-xs text-slate-500 mb-3">Irreversible actions. Please proceed with caution.</p>
+                                        <Button variant="danger" onClick={() => { if (confirm("Are you sure? This deletes ALL local data.")) resetData(); }} className="w-full sm:w-auto">
+                                            <Icon name="trash-2" size={16} /> Factory Reset App
+                                        </Button>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* App Info */}
+                            <div className="text-center pt-4">
+                                <p className="text-xs text-slate-400">RestroBuddy v1.2.0 • Build 2026.02.12</p>
+                                <p className="text-xs text-slate-300 mt-1">Made with ❤️ for Local Businesses</p>
                             </div>
-                            <p className="text-xs text-slate-400 mt-2">Data sync is active.</p>
-                        </CardContent>
-                    </Card>
-
-                    <Card>
-                        <CardHeader><CardTitle>App Information</CardTitle></CardHeader>
-                        <CardContent>
-                            <p className="text-sm text-slate-500 mb-2">RestroBuddy Version 1.0.0</p>
-                            <p className="text-sm text-slate-500">A simple, offline-first restaurant management system.</p>
-                        </CardContent>
-                    </Card>
-
-                    <Card className="border-red-100">
-                        <CardHeader><CardTitle className="text-red-600">Danger Zone</CardTitle></CardHeader>
-                        <CardContent>
-                            <p className="text-sm text-slate-500 mb-4">This will delete all local data and reset the application to its initial seeded state.</p>
-                            <Button variant="danger" onClick={() => { if (confirm("Are you sure?")) resetData(); }}>
-                                <Icon name="trash-2" size={16} /> Hard Reset App
-                            </Button>
-                        </CardContent>
-                    </Card>
+                        </div>
+                    </div>
                 </div>
             );
-        }
+        };
 
         // --- AUTH COMPONENT ---
         const Auth = ({ onLogin }) => {
@@ -1552,54 +1791,73 @@
             };
 
             return (
-                <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-                    <Card className="w-full max-w-md shadow-xl">
-                        <CardHeader className="text-center space-y-2">
-                            <div className="mx-auto w-12 h-12 bg-primary rounded-full flex items-center justify-center text-white mb-2">
-                                <Icon name="pizza" size={24} />
+                <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4 relative overflow-hidden">
+                    <div className="absolute inset-0 z-0">
+                        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-orange-200 rounded-full blur-[100px] opacity-30"></div>
+                        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-200 rounded-full blur-[100px] opacity-30"></div>
+                    </div>
+
+                    <Card className="w-full max-w-md relative z-10 border-0 shadow-2xl bg-white/80 backdrop-blur-xl">
+                        <CardHeader className="text-center pb-2">
+                            <div className="w-16 h-16 bg-gradient-to-br from-orange-400 to-red-600 rounded-2xl mx-auto flex items-center justify-center shadow-lg shadow-orange-200 mb-4 transform rotate-[-5deg]">
+                                <Icon name="pizza" size={32} className="text-white" />
                             </div>
-                            <CardTitle className="text-2xl text-slate-800">RestroBuddy</CardTitle>
-                            <p className="text-slate-500 text-sm">{isRegister ? 'Create your account' : 'Sign in to your account'}</p>
+                            <CardTitle className="text-2xl font-bold text-slate-800">RestroBuddy</CardTitle>
+                            <p className="text-slate-500 text-sm mt-1">Restaurant Management System</p>
                         </CardHeader>
                         <CardContent>
+                            {error && (
+                                <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-4 flex items-center gap-2 border border-red-100">
+                                    <Icon name="alert-circle" size={16} />
+                                    {error}
+                                </div>
+                            )}
+
                             <form onSubmit={handleSubmit} className="space-y-4">
-                                {error && <div className="p-3 text-sm text-red-600 bg-red-50 rounded-lg border border-red-100">{error}</div>}
-                                <div className="space-y-2">
-                                    <Label>Username</Label>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1.5 ml-1">Username</label>
                                     <Input
-                                        type="text"
                                         placeholder="Enter your username"
                                         value={formData.username}
                                         onChange={e => setFormData({ ...formData, username: e.target.value })}
+                                        className="h-11 bg-slate-50 border-slate-200 focus:bg-white transition-all"
                                     />
                                 </div>
-                                <div className="space-y-2">
-                                    <Label>Password</Label>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1.5 ml-1">Password</label>
                                     <Input
                                         type="password"
-                                        placeholder="Enter your password"
+                                        placeholder="••••••••"
                                         value={formData.password}
                                         onChange={e => setFormData({ ...formData, password: e.target.value })}
+                                        className="h-11 bg-slate-50 border-slate-200 focus:bg-white transition-all"
                                     />
                                 </div>
-                                <Button type="submit" className="w-full" size="lg">
+                                <Button type="submit" className="w-full h-11 text-base font-medium shadow-orange-200 shadow-lg mt-2">
                                     {isRegister ? 'Create Account' : 'Sign In'}
                                 </Button>
                             </form>
+
                             <div className="mt-6 text-center">
-                                <p className="text-sm text-slate-500">
-                                    {isRegister ? 'Already have an account?' : "Don't have an account?"}
-                                    <button
-                                        type="button"
-                                        onClick={() => { setIsRegister(!isRegister); setError(''); }}
-                                        className="ml-1 font-medium text-primary hover:underline focus:outline-none"
-                                    >
-                                        {isRegister ? 'Sign In' : 'Sign Up'}
-                                    </button>
-                                </p>
+                                <button
+                                    onClick={() => { setIsRegister(!isRegister); setError(''); }}
+                                    className="text-sm text-slate-500 hover:text-orange-600 font-medium transition-colors"
+                                >
+                                    {isRegister ? 'Already have an account? Sign In' : 'Need an account? Create one'}
+                                </button>
+                            </div>
+
+                            <div className="mt-8 pt-4 border-t border-slate-100 flex justify-center">
+                                <button onClick={handleReset} className="text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 transition-colors">
+                                    <Icon name="trash-2" size={12} /> Factory Reset
+                                </button>
                             </div>
                         </CardContent>
                     </Card>
+
+                    <div className="absolute bottom-4 text-center w-full text-slate-400 text-xs">
+                        &copy; {new Date().getFullYear()} RestroBuddy. Local-first & Cloud-synced.
+                    </div>
                 </div>
             );
         };
@@ -1639,74 +1897,139 @@
 
             const navItems = [
                 { id: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard' },
-                { id: 'pos', label: 'Point of Sale', icon: 'shopping-cart' },
-                { id: 'kitchen', label: 'Kitchen Display', icon: 'chef-hat' },
-                { id: 'history', label: 'Orders History', icon: 'history' },
+                { id: 'pos', label: 'POS', icon: 'shopping-cart' },
+                { id: 'orders', label: 'Orders', icon: 'chef-hat' },
                 { id: 'inventory', label: 'Inventory', icon: 'package' },
-                { id: 'restock', label: 'Restock', icon: 'refresh-cw' },
-                { id: 'purchase-orders', label: 'Purchase Orders', icon: 'truck' },
-                { id: 'menu', label: 'Menu & Recipes', icon: 'book-open' },
-                { id: 'settings', label: 'Settings', icon: 'settings' },
+                { id: 'menu', label: 'Menu', icon: 'book-open' }, // Shortened labels for mobile
+            ];
+
+            // Mobile Bottom Nav specific items (limit to 4-5)
+            const mobileNavItems = [
+                { id: 'dashboard', label: 'Dash', icon: 'layout-dashboard' },
+                { id: 'pos', label: 'POS', icon: 'shopping-cart' },
+                { id: 'orders', label: 'Orders', icon: 'chef-hat' },
+                { id: 'inventory', label: 'Inv', icon: 'package' },
             ];
 
             return (
                 <div className="flex h-screen bg-background overflow-hidden relative">
-                    {/* Sidebar */}
-                    <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-secondary text-white transform transition-transform duration-300 lg:relative lg:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                        <div className="p-6 border-b border-white/10 flex items-center justify-between">
-                            <h1 className="text-2xl font-bold flex items-center gap-2">
-                                <span className="text-primary"><Icon name="pizza" /></span>
+                    {/* Desktop Sidebar (Hidden on Mobile) */}
+                    <aside className="hidden lg:flex w-64 bg-white border-r border-slate-100 flex-col shadow-lg z-20">
+                        <div className="p-6 border-b border-slate-50 flex items-center gap-3">
+                            <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-red-600 text-white rounded-xl flex items-center justify-center shadow-orange-200 shadow-lg">
+                                <Icon name="pizza" size={20} />
+                            </div>
+                            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-slate-900 to-slate-600 tracking-tight">
                                 RestroBuddy
                             </h1>
-                            <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden text-white/50 hover:text-white"><Icon name="x" /></button>
                         </div>
-                        <nav className="p-4 space-y-2">
+
+                        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
                             {navItems.map(item => (
                                 <button
                                     key={item.id}
-                                    onClick={() => { setView(item.id); setIsMobileMenuOpen(false); }}
-                                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === item.id ? 'bg-primary text-white shadow-lg' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+                                    onClick={() => setView(item.id)}
+                                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 group ${view === item.id
+                                        ? 'bg-orange-50 text-orange-600 font-semibold shadow-sm'
+                                        : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'
+                                        }`}
                                 >
-                                    <Icon name={item.icon} size={20} />
-                                    <span className="font-medium">{item.label}</span>
+                                    <Icon name={item.icon} size={20} className={view === item.id ? "text-orange-500" : "text-slate-400 group-hover:text-slate-600"} />
+                                    <span>{item.label}</span>
+                                    {view === item.id && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-orange-500"></div>}
                                 </button>
                             ))}
-                        </nav>
-                        <div className="absolute bottom-6 left-6 right-6 p-4 bg-white/5 rounded-xl border border-white/5">
-                            <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center font-bold text-white capitalize">
-                                    {localStorage.getItem('rb_user')?.charAt(0) || 'U'}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-medium truncate capitalize">{localStorage.getItem('rb_user') || 'User'}</p>
-                                    <p className="text-xs text-white/50">Manager</p>
-                                </div>
-                                <button onClick={onLogout} className="text-slate-400 hover:text-white transition-colors" title="Logout">
-                                    <Icon name="log-out" size={18} />
+                            {/* Secondary Nav Items */}
+                            <div className="pt-4 mt-4 border-t border-slate-100">
+                                <button onClick={() => setView('restock')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-slate-500 hover:bg-slate-50 ${view === 'restock' ? 'bg-orange-50 text-orange-600' : ''}`}>
+                                    <Icon name="refresh-cw" size={20} /> <span>Restock</span>
+                                </button>
+                                <button onClick={() => setView('purchase-orders')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-slate-500 hover:bg-slate-50 ${view === 'purchase-orders' ? 'bg-orange-50 text-orange-600' : ''}`}>
+                                    <Icon name="truck" size={20} /> <span>Purchases</span>
+                                </button>
+                                <button onClick={() => setView('settings')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-colors text-slate-500 hover:bg-slate-50 ${view === 'settings' ? 'bg-orange-50 text-orange-600' : ''}`}>
+                                    <Icon name="settings" size={20} /> <span>Settings</span>
                                 </button>
                             </div>
+                        </nav>
+
+                        <div className="p-4 m-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-white shadow-sm flex items-center justify-center font-bold text-orange-600 uppercase border border-slate-100">
+                                {localStorage.getItem('rb_user')?.charAt(0) || 'U'}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold truncate capitalize text-slate-800">{localStorage.getItem('rb_user') || 'User'}</p>
+                                <p className="text-xs text-slate-400">Manager</p>
+                            </div>
+                            <button onClick={onLogout} className="text-slate-400 hover:text-red-500 transition-colors p-1" title="Logout">
+                                <Icon name="log-out" size={18} />
+                            </button>
                         </div>
                     </aside>
 
+                    {/* Mobile Bottom Navigation (Visible on Mobile) */}
+                    <nav className="lg:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-slate-200 flex items-center justify-around z-50 glass safe-area-bottom pb-1">
+                        {mobileNavItems.map(item => (
+                            <button
+                                key={item.id}
+                                onClick={() => setView(item.id)}
+                                className={`flex flex-col items-center justify-center w-full h-full pt-1 ${view === item.id ? 'text-orange-600' : 'text-slate-400'}`}
+                            >
+                                <div className={`p-1.5 rounded-full mb-0.5 transition-all ${view === item.id ? 'bg-orange-100 translate-y-[-2px]' : ''}`}>
+                                    <Icon name={item.icon} size={20} />
+                                </div>
+                                <span style={{ fontSize: '10px' }} className="font-medium">{item.label}</span>
+                            </button>
+                        ))}
+                        <button
+                            onClick={() => setView('settings')} // Use menu for "More"?
+                            className={`flex flex-col items-center justify-center w-full h-full pt-1 ${view === 'settings' ? 'text-orange-600' : 'text-slate-400'}`}
+                        >
+                            <div className={`p-1.5 rounded-full mb-0.5 transition-all ${view === 'settings' ? 'bg-orange-100' : ''}`}>
+                                <Icon name="menu" size={20} />
+                            </div>
+                            <span style={{ fontSize: '10px' }} className="font-medium">More</span>
+                        </button>
+                    </nav>
+
                     {/* Main Content */}
-                    <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-                        {/* Header */}
-                        <header className="bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-30">
+                    <main className="flex-1 flex flex-col h-full overflow-hidden relative bg-slate-50/50">
+                        {/* Header (Desktop: Sticky, Mobile: Simple Top Bar) */}
+                        <header className="glass sticky top-0 z-30 px-6 py-4 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                <button onClick={() => setIsMobileMenuOpen(true)} className="lg:hidden text-slate-600"><Icon name="menu" /></button>
-                                <h1 className="font-bold text-lg text-slate-800 capitalize">{view.replace('-', ' ')}</h1>
+                                {/* Mobile Logo Only */}
+                                <div className="lg:hidden w-8 h-8 bg-gradient-to-br from-orange-400 to-red-600 text-white rounded-lg flex items-center justify-center shadow-md">
+                                    <Icon name="pizza" size={16} />
+                                </div>
+                                <h1 className="font-bold text-lg text-slate-800 capitalize tracking-tight">{view.replace('-', ' ')}</h1>
                             </div>
                             <div className="flex items-center gap-4">
                                 <NotificationBell />
                             </div>
                         </header>
 
-                        {/* View Area */}
-                        <div className="flex-1 overflow-auto p-4 md:p-8 relative">
+                        {/* View Area (Padding bottom for mobile nav) */}
+                        <div className="flex-1 overflow-auto p-4 md:p-8 pb-24 lg:pb-8 relative scroll-smooth">
                             {view === 'dashboard' && <Dashboard />}
                             {view === 'pos' && <POS />}
-                            {view === 'kitchen' && <Kitchen />}
-                            {view === 'history' && <OrdersHistory />}
+                            {view === 'orders' && (
+                                <div className="space-y-6 fade-in">
+                                    <div className="flex items-center gap-2 p-1 bg-slate-200/50 rounded-xl w-fit">
+                                        <button className="px-4 py-2 rounded-lg bg-white shadow-sm text-sm font-medium text-slate-800">Active Kitchen</button>
+                                        <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-slate-800" onClick={() => setView('history')}>History</button>
+                                    </div>
+                                    <Kitchen />
+                                </div>
+                            )}
+                            {view === 'history' && (
+                                <div className="space-y-6 fade-in">
+                                    <div className="flex items-center gap-2 p-1 bg-slate-200/50 rounded-xl w-fit">
+                                        <button className="px-4 py-2 rounded-lg text-sm font-medium text-slate-500 hover:text-slate-800" onClick={() => setView('orders')}>Active Kitchen</button>
+                                        <button className="px-4 py-2 rounded-lg bg-white shadow-sm text-sm font-medium text-slate-800">History</button>
+                                    </div>
+                                    <OrdersHistory />
+                                </div>
+                            )}
                             {view === 'inventory' && <Inventory />}
                             {view === 'menu' && <Menu />}
                             {view === 'restock' && <Restock />}
@@ -1714,9 +2037,6 @@
                             {view === 'settings' && <Settings />}
                         </div>
                     </main>
-
-                    {/* Mobile Overlay */}
-                    {isMobileMenuOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)}></div>}
 
                     {/* Due PO Modal */}
                     {duePO && (
