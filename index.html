@@ -572,19 +572,65 @@
 
         const useData = () => useContext(DataContext);
 
-        // --- DASHBOARD VIEW (Modernized) ---
+        // --- DASHBOARD VIEW (Dyanmic Analytics) ---
         const Dashboard = () => {
             const { orders, transactions, inventory, purchaseOrders } = useData();
+            const [dateRange, setDateRange] = useState('today'); // today, week, month, year
 
-            const today = new Date().toDateString();
-            const todayOrders = orders.filter(o => new Date(o.date).toDateString() === today);
-            const todayRevenue = transactions
-                .filter(t => t.type === 'income' && new Date(t.date).toDateString() === today)
+            const isInDateRange = (dateString, range) => {
+                const d = new Date(dateString);
+                const now = new Date();
+                const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+                if (range === 'today') {
+                    return d >= startOfDay;
+                } else if (range === 'week') {
+                    const startOfWeek = new Date(startOfDay);
+                    startOfWeek.setDate(startOfDay.getDate() - startOfDay.getDay()); // Sunday as start
+                    return d >= startOfWeek;
+                } else if (range === 'month') {
+                    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                    return d >= startOfMonth;
+                } else if (range === 'year') {
+                    const startOfYear = new Date(now.getFullYear(), 0, 1);
+                    return d >= startOfYear;
+                }
+                return true;
+            };
+
+            // Filter Data
+            const filteredOrders = orders.filter(o => isInDateRange(o.date, dateRange));
+            const filteredTrans = transactions.filter(t => isInDateRange(t.date, dateRange));
+
+            // Calculate Metrics
+            const revenue = filteredTrans
+                .filter(t => t.type === 'income')
                 .reduce((sum, t) => sum + t.amount, 0);
+
+            const expenses = filteredTrans
+                .filter(t => t.type === 'expense')
+                .reduce((sum, t) => sum + t.amount, 0);
+
+            const profit = revenue - expenses;
+            const orderCount = filteredOrders.length;
+            const completedCount = filteredOrders.filter(o => o.status === 'completed').length;
 
             const criticalStock = inventory.filter(i => i.stock <= 0).length;
             const lowStock = inventory.filter(i => i.stock > 0 && i.stock <= i.minStock).length;
             const pendingPOs = purchaseOrders.filter(po => po.status === 'pending').length;
+
+            // Calculate Top Selling
+            const itemSales = {};
+            filteredOrders.forEach(order => {
+                if (order.status !== 'cancelled') {
+                    order.items.forEach(item => {
+                        itemSales[item.name] = (itemSales[item.name] || 0) + item.qty;
+                    });
+                }
+            });
+            const topItems = Object.entries(itemSales)
+                .sort(([, a], [, b]) => b - a)
+                .slice(0, 3);
 
             const StatCard = ({ title, value, icon, color, subValue, trend }) => (
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-start justify-between hover:shadow-md transition-all group">
@@ -596,7 +642,7 @@
                         <h3 className="text-3xl font-bold text-slate-800 tracking-tight">{value}</h3>
                         {(subValue || trend) && (
                             <div className="flex items-center gap-2 mt-2">
-                                {trend && <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded flex items-center gap-1"><Icon name="trending-up" size={12} /> {trend}</span>}
+                                {trend && <span className={`text-xs font-medium px-1.5 py-0.5 rounded flex items-center gap-1 ${trend.includes('+') || trend.includes('Profit') ? 'text-emerald-600 bg-emerald-50' : 'text-red-600 bg-red-50'}`}><Icon name={trend.includes('+') ? "trending-up" : "trending-down"} size={12} /> {trend}</span>}
                                 {subValue && <p className="text-xs text-slate-400">{subValue}</p>}
                             </div>
                         )}
@@ -606,43 +652,76 @@
 
             return (
                 <div className="space-y-6 fade-in pb-12">
-                    <div>
-                        <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
-                        <p className="text-slate-500 text-sm">Welcome back, here's what's happening today.</p>
+                    <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+                        <div>
+                            <h2 className="text-2xl font-bold text-slate-800">Dashboard</h2>
+                            <p className="text-slate-500 text-sm">Overview for <span className="font-semibold text-primary capitalize">{dateRange === 'today' ? "Today" : "This " + dateRange}</span></p>
+                        </div>
+
+                        <div className="flex items-center gap-2 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+                            {['today', 'week', 'month', 'year'].map(range => (
+                                <button
+                                    key={range}
+                                    onClick={() => setDateRange(range)}
+                                    className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${dateRange === range ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'}`}
+                                >
+                                    {range.charAt(0).toUpperCase() + range.slice(1)}
+                                </button>
+                            ))}
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         <StatCard
-                            title="Daily Revenue"
-                            value={`$${todayRevenue.toFixed(2)}`}
+                            title="Revenue"
+                            value={`₹${revenue.toFixed(2)}`}
                             icon="dollar-sign"
                             color="bg-emerald-500"
-                            trend="+12% from yesterday"
+                            trend={dateRange === 'today' ? "Gross Income" : "Total Revenue"}
                         />
                         <StatCard
-                            title="Today's Orders"
-                            value={todayOrders.length}
+                            title="Net Profit"
+                            value={`₹${profit.toFixed(2)}`}
+                            icon="pie-chart"
+                            color={profit >= 0 ? "bg-blue-500" : "bg-red-500"}
+                            trend={profit >= 0 ? `+${((profit / revenue) * 100 || 0).toFixed(0)}% Margin` : "Loss"}
+                        />
+                        <StatCard
+                            title="Expenses"
+                            value={`₹${expenses.toFixed(2)}`}
+                            icon="credit-card"
+                            color="bg-red-400"
+                            subValue="Cost of Goods & Ops"
+                        />
+                        <StatCard
+                            title="Total Orders"
+                            value={orderCount}
                             icon="shopping-bag"
-                            color="bg-blue-500"
-                            subValue={`${todayOrders.filter(o => o.status === 'completed').length} Completed`}
-                        />
-                        <StatCard
-                            title="Stock Alerts"
-                            value={criticalStock + lowStock}
-                            subValue={`${criticalStock} Critical, ${lowStock} Low`}
-                            icon="alert-triangle"
-                            color={criticalStock > 0 ? "bg-red-500" : "bg-orange-400"}
-                        />
-                        <StatCard
-                            title="Pending POs"
-                            value={pendingPOs}
-                            subValue="Unreceived Orders"
-                            icon="truck"
                             color="bg-purple-500"
+                            subValue={`${completedCount} Completed`}
                         />
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <Card className="h-full">
+                            <CardHeader><CardTitle>Top Selling Items</CardTitle></CardHeader>
+                            <CardContent>
+                                <div className="space-y-4">
+                                    {topItems.map(([name, qty], index) => (
+                                        <div key={name} className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${index === 0 ? 'bg-yellow-100 text-yellow-600' : index === 1 ? 'bg-slate-100 text-slate-600' : 'bg-orange-50 text-orange-600'}`}>
+                                                    #{index + 1}
+                                                </div>
+                                                <span className="text-sm font-medium text-slate-700">{name}</span>
+                                            </div>
+                                            <span className="font-bold text-slate-800">{qty} <span className="text-xs font-normal text-slate-400">sold</span></span>
+                                        </div>
+                                    ))}
+                                    {topItems.length === 0 && <p className="text-slate-400 text-sm text-center py-4">No sales in this period</p>}
+                                </div>
+                            </CardContent>
+                        </Card>
                         <Card className="h-full">
                             <CardHeader><CardTitle>Recent Activity</CardTitle></CardHeader>
                             <CardContent>
@@ -658,7 +737,7 @@
                                                     <p className="text-xs text-slate-400">{new Date(order.date).toLocaleTimeString()}</p>
                                                 </div>
                                             </div>
-                                            <span className="font-bold text-slate-700">${order.total.toFixed(2)}</span>
+                                            <span className="font-bold text-slate-700">₹{order.total.toFixed(2)}</span>
                                         </div>
                                     ))}
                                     {orders.length === 0 && <p className="text-sm text-slate-400 text-center py-4">No recent activity.</p>}
@@ -732,7 +811,7 @@
                 addOrder({ items: cart, total, method: 'Cash' });
                 setCart([]);
                 setIsMobileCartOpen(false);
-                addNotification("Order Placed", `Order for $${total.toFixed(2)} sent to kitchen.`, "success");
+                addNotification("Order Placed", `Order for ₹${total.toFixed(2)} sent to kitchen.`, "success");
             };
 
             // Cart Component (Reusable for Desktop & Mobile Sheet)
@@ -754,7 +833,7 @@
                                 <div key={item.id} className="flex items-center justify-between bg-white border border-slate-100 p-2 rounded-xl shadow-sm">
                                     <div className="flex-1">
                                         <p className="font-semibold text-slate-800 text-sm">{item.name}</p>
-                                        <p className="text-xs text-orange-600 font-medium">${item.price}</p>
+                                        <p className="text-xs text-orange-600 font-medium">₹{item.price}</p>
                                     </div>
                                     <div className="flex items-center gap-3 bg-slate-50 rounded-lg p-1">
                                         <button onClick={() => updateQty(item.id, -1)} className="w-6 h-6 flex items-center justify-center bg-white rounded shadow-sm text-slate-600 hover:text-red-500 active:scale-95 transition-all"><Icon name="minus" size={14} /></button>
@@ -769,7 +848,7 @@
                     <div className="p-4 bg-slate-50 border-t border-slate-100">
                         <div className="flex justify-between items-center mb-4">
                             <span className="text-slate-500 font-medium">Total</span>
-                            <span className="text-2xl font-bold text-slate-900">${total.toFixed(2)}</span>
+                            <span className="text-2xl font-bold text-slate-900">₹{total.toFixed(2)}</span>
                         </div>
                         <Button onClick={handleCheckout} className="w-full py-3 h-auto text-lg shadow-orange-200 shadow-xl" disabled={cart.length === 0}>
                             Checkout <Icon name="arrow-right" size={20} className="ml-2 inline" />
@@ -823,7 +902,7 @@
                                             <span className="font-bold text-lg">{item.emoji || '🍽️'}</span>
                                         </div>
                                         <h3 className="font-bold text-slate-800 leading-tight mb-1">{item.name}</h3>
-                                        <p className="text-orange-600 font-semibold">${item.price}</p>
+                                        <p className="text-orange-600 font-semibold">₹{item.price}</p>
                                     </div>
                                 ))}
                             </div>
@@ -846,7 +925,7 @@
                                     <div className="bg-orange-500 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">{cart.length}</div>
                                     <span className="font-medium">View Cart</span>
                                 </div>
-                                <span className="font-bold text-lg">${total.toFixed(2)}</span>
+                                <span className="font-bold text-lg">₹{total.toFixed(2)}</span>
                             </button>
                         )}
                     </div>
@@ -908,7 +987,7 @@
                                     <div key={item.id} className="bg-white border border-slate-100 rounded-xl p-3 shadow-sm flex items-center justify-between" onClick={() => startEdit(item)}>
                                         <div>
                                             <p className="font-semibold text-slate-800">{item.name}</p>
-                                            <p className="text-xs text-slate-500">Min: {item.minStock} {item.unit} | ${item.cost || 0}/unit</p>
+                                            <p className="text-xs text-slate-500">Min: {item.minStock} {item.unit} | ₹{item.cost || 0}/unit</p>
                                         </div>
                                         <div className="text-right">
                                             <p className={`font-bold ${item.stock <= item.minStock ? 'text-red-500' : 'text-emerald-600'}`}>
@@ -943,7 +1022,7 @@
                                                     {item.stock}
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-500">{item.unit}</td>
-                                                <td className="px-4 py-3 text-slate-500">${item.cost || 0}</td>
+                                                <td className="px-4 py-3 text-slate-500">₹{item.cost || 0}</td>
                                                 <td className="px-4 py-3">
                                                     {item.stock <= 0 ? <span className="text-red-500 font-bold text-xs bg-red-50 px-2 py-0.5 rounded">Critical</span> :
                                                         item.stock <= item.minStock ? <span className="text-orange-500 font-bold text-xs bg-orange-50 px-2 py-0.5 rounded">Low</span> :
@@ -1059,7 +1138,7 @@
                                                 <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full mt-1 inline-block">{item.category}</span>
                                             </div>
                                         </div>
-                                        <span className="font-bold text-lg text-primary">${item.price}</span>
+                                        <span className="font-bold text-lg text-primary">₹{item.price}</span>
                                     </div>
                                 </CardHeader>
                                 <CardContent>
@@ -1103,7 +1182,7 @@
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
                                             <div className="space-y-1">
-                                                <label className="text-sm font-medium text-slate-700">Price ($)</label>
+                                                <label className="text-sm font-medium text-slate-700">Price (₹)</label>
                                                 <Input type="number" step="0.01" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value })} required />
                                             </div>
                                             <div className="space-y-1">
@@ -1294,7 +1373,7 @@
                                                         ))}
                                                     </div>
                                                 </td>
-                                                <td className="p-4 font-bold text-slate-800 text-right">${order.total.toFixed(2)}</td>
+                                                <td className="p-4 font-bold text-slate-800 text-right">₹{order.total.toFixed(2)}</td>
                                                 <td className="p-4 text-center">
                                                     <Badge variant={order.status === 'completed' ? 'success' : 'danger'}>
                                                         {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
@@ -1336,7 +1415,7 @@
                                     </div>
                                     <div className="flex justify-between items-center border-t border-slate-50 pt-3">
                                         <span className="text-sm font-medium text-slate-500">Total</span>
-                                        <span className="text-lg font-bold text-slate-800">${order.total.toFixed(2)}</span>
+                                        <span className="text-lg font-bold text-slate-800">₹{order.total.toFixed(2)}</span>
                                     </div>
                                 </CardContent>
                             </Card>
@@ -1360,7 +1439,7 @@
                 restockIngredient(parseInt(selectedId), parseFloat(qty), totalCost);
                 setQty("");
                 setUnitCost("");
-                addNotification("Restock Successful", `Added ${qty} units. Cost: $${totalCost.toFixed(2)}`, "success");
+                addNotification("Restock Successful", `Added ${qty} units. Cost: ₹${totalCost.toFixed(2)}`, "success");
             };
 
             const selectedItem = inventory.find(i => i.id === parseInt(selectedId));
@@ -1389,7 +1468,7 @@
                                         <Icon name="info" size={16} />
                                         <span>Current Stock: <strong>{selectedItem.stock} {selectedItem.unit}</strong></span>
                                         <span>|</span>
-                                        <span>Est. Cost: <strong>${selectedItem.cost}/{selectedItem.unit}</strong></span>
+                                        <span>Est. Cost: <strong>₹{selectedItem.cost}/{selectedItem.unit}</strong></span>
                                     </div>
                                 )}
 
@@ -1406,7 +1485,7 @@
                                         />
                                     </div>
                                     <div>
-                                        <Label>Unit Cost ($)</Label>
+                                        <Label>Unit Cost (₹)</Label>
                                         <Input
                                             type="number"
                                             step="0.01"
@@ -1520,15 +1599,15 @@
                                                     <div key={idx} className="grid grid-cols-12 items-center px-2 py-1.5 border-b border-slate-200/50 last:border-0 hover:bg-slate-100 transition-colors rounded">
                                                         <div className="col-span-6 font-medium text-slate-700">{invItem ? invItem.name : 'Unknown'}</div>
                                                         <div className="col-span-2 text-center text-slate-600">{item.qty} {invItem?.unit}</div>
-                                                        <div className="col-span-2 text-center text-slate-600">${item.unitCost.toFixed(2)}</div>
-                                                        <div className="col-span-2 text-right font-medium text-slate-800">${(item.qty * item.unitCost).toFixed(2)}</div>
+                                                        <div className="col-span-2 text-center text-slate-600">₹{item.unitCost.toFixed(2)}</div>
+                                                        <div className="col-span-2 text-right font-medium text-slate-800">₹{(item.qty * item.unitCost).toFixed(2)}</div>
                                                     </div>
                                                 );
                                             })}
                                         </div>
                                         <div className="mt-3 pt-3 border-t border-slate-200 flex justify-end items-center gap-2">
                                             <span className="text-slate-500 text-xs uppercase">Total Amount</span>
-                                            <span className="font-bold text-lg text-slate-800">${po.items.reduce((sum, i) => sum + (i.qty * i.unitCost), 0).toFixed(2)}</span>
+                                            <span className="font-bold text-lg text-slate-800">₹{po.items.reduce((sum, i) => sum + (i.qty * i.unitCost), 0).toFixed(2)}</span>
                                         </div>
                                     </div>
                                 </CardContent>
@@ -1573,7 +1652,7 @@
                                                     <Input type="number" step="0.01" value={newItem.qty} onChange={e => setNewItem({ ...newItem, qty: e.target.value })} placeholder="0" />
                                                 </div>
                                                 <div className="w-full md:w-28">
-                                                    <span className="text-xs text-slate-500 mb-1 block font-medium">Unit Cost ($)</span>
+                                                    <span className="text-xs text-slate-500 mb-1 block font-medium">Unit Cost (₹)</span>
                                                     <Input type="number" step="0.01" value={newItem.unitCost} onChange={e => setNewItem({ ...newItem, unitCost: e.target.value })} placeholder="0.00" />
                                                 </div>
                                                 <div className="md:mb-px">
@@ -1603,11 +1682,11 @@
                                                                 </div>
                                                                 <div className="text-right">
                                                                     <span className="block text-xs text-slate-400">Cost</span>
-                                                                    <span className="font-medium text-slate-700">${item.unitCost}</span>
+                                                                    <span className="font-medium text-slate-700">₹{item.unitCost}</span>
                                                                 </div>
                                                                 <div className="text-right w-20">
                                                                     <span className="block text-xs text-slate-400">Total</span>
-                                                                    <span className="font-bold text-slate-800">${(item.qty * item.unitCost).toFixed(2)}</span>
+                                                                    <span className="font-bold text-slate-800">₹{(item.qty * item.unitCost).toFixed(2)}</span>
                                                                 </div>
                                                                 <button type="button" onClick={() => removeItem(idx)} className="text-slate-300 hover:text-red-500 p-2"><Icon name="x" size={18} /></button>
                                                             </div>
@@ -1619,7 +1698,7 @@
                                             {formData.items.length > 0 && (
                                                 <div className="mt-4 pt-3 border-t border-slate-200 flex justify-end items-center gap-3">
                                                     <span className="text-slate-500 font-medium">Order Total:</span>
-                                                    <span className="text-xl font-bold text-slate-800">${formData.items.reduce((sum, i) => sum + (i.qty * i.unitCost), 0).toFixed(2)}</span>
+                                                    <span className="text-xl font-bold text-slate-800">₹{formData.items.reduce((sum, i) => sum + (i.qty * i.unitCost), 0).toFixed(2)}</span>
                                                 </div>
                                             )}
                                         </div>
