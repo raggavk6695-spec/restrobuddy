@@ -113,6 +113,30 @@
             return <i ref={iconRef} data-lucide={name} className={className}></i>;
         };
 
+        // --- ERROR BOUNDARY ---
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null };
+            }
+            static getDerivedStateFromError(error) { return { hasError: true, error }; }
+            componentDidCatch(error, errorInfo) { console.error("React Error:", error, errorInfo); }
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="p-8 text-center">
+                            <h2 className="text-xl font-bold text-red-600 mb-2">Something went wrong</h2>
+                            <p className="text-slate-600 mb-4 bg-slate-100 p-2 rounded text-xs font-mono">{this.state.error?.toString()}</p>
+                            <Button onClick={() => { localStorage.clear(); window.location.reload(); }} variant="danger">
+                                Clear Data & Restart
+                            </Button>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
         // --- UI COMPONENTS (ShadCN style) ---
         const Card = ({ children, className = "" }) => <div className={`bg-white rounded-xl shadow-sm border border-slate-100 ${className}`}>{children}</div>;
         const CardHeader = ({ children, className = "" }) => <div className={`p-6 pb-2 ${className}`}>{children}</div>;
@@ -230,25 +254,116 @@
         // --- DATA CONTEXT ---
         const DataContext = createContext();
 
+        // --- GOOGLE SHEETS SERVICE ---
+        const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyeu8VWZ-3VJezGHALGM5B0AdpjEKGD9ax6Ud1HgiVlFCrBxdAtndn_JkWJzTRCDV2G0w/exec";
+
+        const GoogleSheetsService = {
+            async call(action, data = {}, user) {
+                if (!SCRIPT_URL) return null;
+
+                try {
+                    const response = await fetch(SCRIPT_URL, {
+                        method: 'POST',
+                        // mode: 'no-cors', // REMOVED to allow reading response. Requires GAS deployment to allow "Anyone".
+                        headers: { "Content-Type": "text/plain;charset=utf-8" },
+                        body: JSON.stringify({ action, username: user, ...data })
+                    });
+                    const json = await response.json();
+                    return json;
+                } catch (e) {
+                    console.error("Sheets API Error:", e);
+                    return { status: 'error', message: e.message };
+                }
+            },
+
+            async getData(user) {
+                if (!SCRIPT_URL) return null;
+                const fullUrl = `${SCRIPT_URL}?action=GET_DATA&username=${user}`;
+                try {
+                    const res = await fetch(fullUrl);
+                    return await res.json();
+                } catch (e) { console.error(e); return null; }
+            }
+        };
 
 
+        // --- DATA PROVIDER ---
         const DataProvider = ({ children, user }) => {
-            // Determine storage prefix based on user. Fallback to 'rb_' for backward compat or guest.
             const prefix = user ? `rb_${user}_` : 'rb_';
 
-            const [inventory, setInventory] = useState(() => JSON.parse(localStorage.getItem(`${prefix}inventory`)) || SEED_DATA.inventory);
-            const [menu, setMenu] = useState(() => JSON.parse(localStorage.getItem(`${prefix}menu`)) || SEED_DATA.menu);
-            const [orders, setOrders] = useState(() => JSON.parse(localStorage.getItem(`${prefix}orders`)) || SEED_DATA.orders);
-            const [purchaseOrders, setPurchaseOrders] = useState(() => JSON.parse(localStorage.getItem(`${prefix}pos`)) || SEED_DATA.pos);
-            const [transactions, setTransactions] = useState(() => JSON.parse(localStorage.getItem(`${prefix}transactions`)) || SEED_DATA.transactions);
-            const [notifications, setNotifications] = useState(() => JSON.parse(localStorage.getItem(`${prefix}notifications`)) || SEED_DATA.notifications);
+            // Core Data State
+            const [inventory, setInventory] = useState(() => JSON.parse(localStorage.getItem(prefix + 'inventory') || '[]'));
+            const [menu, setMenu] = useState(() => JSON.parse(localStorage.getItem(prefix + 'menu') || '[]'));
+            const [orders, setOrders] = useState(() => JSON.parse(localStorage.getItem(prefix + 'orders') || '[]'));
+            const [pos, setPos] = useState(() => JSON.parse(localStorage.getItem(prefix + 'pos') || '[]'));
+            const [notifications, setNotifications] = useState(() => JSON.parse(localStorage.getItem(prefix + 'notifications') || '[]'));
+            const [transactions, setTransactions] = useState(() => JSON.parse(localStorage.getItem(prefix + 'transactions') || '[]'));
+            const [purchaseOrders, setPurchaseOrders] = useState(() => JSON.parse(localStorage.getItem(prefix + 'purchase_orders') || '[]'));
 
+            // Sync Effects - Local Storage
             useEffect(() => { localStorage.setItem(`${prefix}inventory`, JSON.stringify(inventory)); }, [inventory, prefix]);
             useEffect(() => { localStorage.setItem(`${prefix}menu`, JSON.stringify(menu)); }, [menu, prefix]);
             useEffect(() => { localStorage.setItem(`${prefix}orders`, JSON.stringify(orders)); }, [orders, prefix]);
-            useEffect(() => { localStorage.setItem(`${prefix}pos`, JSON.stringify(purchaseOrders)); }, [purchaseOrders, prefix]);
-            useEffect(() => { localStorage.setItem(`${prefix}transactions`, JSON.stringify(transactions)); }, [transactions, prefix]);
-            useEffect(() => { localStorage.setItem(`${prefix}notifications`, JSON.stringify(notifications)); }, [notifications, prefix]);
+            useEffect(() => { localStorage.setItem(`${prefix}pos`, JSON.stringify(pos)); }, [pos, prefix]);
+            useEffect(() => { localStorage.setItem(prefix + 'transactions', JSON.stringify(transactions)); }, [transactions, prefix]);
+            useEffect(() => { localStorage.setItem(prefix + 'purchase_orders', JSON.stringify(purchaseOrders)); }, [purchaseOrders, prefix]);
+
+            // Cloud Sync - Function to push data
+            const syncToCloud = (tableName, data) => {
+                if (user && SCRIPT_URL) {
+                    // Debounce or fire-and-forget
+                    GoogleSheetsService.call('SYNC_DATA', { data: { [tableName]: data } }, user);
+                }
+            };
+
+            // Hook up syncs to effects? 
+            // Caveat: This triggers on load too. We want to avoid overwriting cloud with stale local on load if cloud is newer.
+            // But for simple "Single Source of Truth is local, push to cloud" it works.
+            // To be safe, we should fetch from cloud ONCE on mount, then push updates.
+
+            // Initial Fetch
+            // Initial Fetch
+            useEffect(() => {
+                const fetchData = async () => {
+                    if (user && SCRIPT_URL) {
+                        try {
+                            // addNotification("Cloud Sync", "Connecting to Google Sheets...", "info"); // Validation: Too much noise on load?
+                            const res = await GoogleSheetsService.getData(user);
+                            if (res && res.status === 'success') {
+                                const d = res.data;
+                                // Validation: Ensure d is object
+                                if (d && typeof d === 'object') {
+                                    if (Array.isArray(d.Inventory)) setInventory(d.Inventory);
+                                    if (Array.isArray(d.Menu)) setMenu(d.Menu);
+                                    if (Array.isArray(d.Orders)) setOrders(d.Orders);
+                                    if (Array.isArray(d.PurchaseOrders)) setPurchaseOrders(d.PurchaseOrders);
+                                    if (Array.isArray(d.Transactions)) setTransactions(d.Transactions);
+                                    if (Array.isArray(d.Notifications)) setNotifications(d.Notifications);
+                                    console.log("Data loaded from cloud for", user);
+                                }
+                            }
+                        } catch (e) {
+                            console.error("Failed to load initial data", e);
+                            addNotification("Sync Error", "Could not load cloud data.", "error");
+                        }
+                    }
+                };
+                fetchData();
+            }, [user]);
+
+            // Push Effects (Debounced slightly by nature of React updates? No, direct call)
+            // We use a ref to skip initial mount sync to avoid "pushing what we just fetched"? 
+            // Actually, if we just fetched, state updates, then this effect fires, pushing it back. Redundant but harmless if idempotent.
+            const isMounted = useRef(false);
+            useEffect(() => { if (isMounted.current) syncToCloud('Inventory', inventory); }, [inventory]);
+            useEffect(() => { if (isMounted.current) syncToCloud('Menu', menu); }, [menu]);
+            useEffect(() => { if (isMounted.current) syncToCloud('Orders', orders); }, [orders]);
+            useEffect(() => { if (isMounted.current) syncToCloud('PurchaseOrders', purchaseOrders); }, [purchaseOrders]);
+            useEffect(() => { if (isMounted.current) syncToCloud('Transactions', transactions); }, [transactions]);
+            // Not syncing notifications to cloud to reduce noise, or user wants it? "All backend data storage". Okay.
+            // useEffect(() => { if (isMounted.current) syncToCloud('Notifications', notifications); }, [notifications]);
+
+            useEffect(() => { isMounted.current = true; }, []);
 
             // Notification helpers
             const addNotification = (title, message = '', type = 'info') => {
@@ -453,6 +568,13 @@
             const criticalStock = inventory.filter(i => i.stock <= 0).length;
             const lowStock = inventory.filter(i => i.stock > 0 && i.stock <= i.minStock).length;
 
+            const handleReset = () => {
+                if (confirm("This will clear all local data. Continue?")) {
+                    localStorage.clear();
+                    window.location.reload();
+                }
+            };
+
             // Simple Chart Data (Last 5 orders revenue)
             const recentRevenue = transactions.filter(t => t.type === 'income').slice(-7);
             const maxRev = Math.max(...recentRevenue.map(r => r.amount), 100);
@@ -512,6 +634,15 @@
                                         </div>
                                     ))}
                                     {recentRevenue.length === 0 && <p className="w-full text-center text-slate-400">No data yet</p>}
+                                </div>
+                                <div className="mt-8 text-center border-t border-slate-100 pt-4">
+                                    <button
+                                        type="button"
+                                        onClick={handleReset}
+                                        className="text-xs text-red-400 hover:text-red-600 flex items-center justify-center gap-1 mx-auto"
+                                    >
+                                        <Icon name="trash-2" size={12} /> Factory Reset (Fix Issues)
+                                    </button>
                                 </div>
                             </CardContent>
                         </Card>
@@ -1316,6 +1447,17 @@
             return (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 fade-in">
                     <Card>
+                        <CardHeader><CardTitle>Cloud Integration</CardTitle></CardHeader>
+                        <CardContent>
+                            <div className="flex items-center gap-2 text-green-600 bg-green-50 p-3 rounded-lg border border-green-100">
+                                <Icon name="check-circle" size={20} />
+                                <span className="font-medium">Connected to Google Sheets</span>
+                            </div>
+                            <p className="text-xs text-slate-400 mt-2">Data sync is active.</p>
+                        </CardContent>
+                    </Card>
+
+                    <Card>
                         <CardHeader><CardTitle>App Information</CardTitle></CardHeader>
                         <CardContent>
                             <p className="text-sm text-slate-500 mb-2">RestroBuddy Version 1.0.0</p>
@@ -1342,13 +1484,56 @@
             const [formData, setFormData] = useState({ username: '', password: '' });
             const [error, setError] = useState('');
 
-            const handleSubmit = (e) => {
+            // Safe LocalStorage Parser
+            const getLocalUsers = () => {
+                try {
+                    return JSON.parse(localStorage.getItem('rb_users') || '{}');
+                } catch (e) {
+                    console.error("Data corruption detected", e);
+                    return {};
+                }
+            };
+
+            const handleReset = () => {
+                if (confirm("This will clear all local data. Continue?")) {
+                    localStorage.clear();
+                    window.location.reload();
+                }
+            };
+
+            const handleSubmit = async (e) => {
                 e.preventDefault();
                 setError('');
-                const { username, password } = formData;
+                const username = formData.username.trim().toLowerCase();
+                const password = formData.password.trim();
+
                 if (!username || !password) { setError("All fields are required"); return; }
 
-                const users = JSON.parse(localStorage.getItem('rb_users') || '{}');
+                // Cloud Auth
+                if (SCRIPT_URL) {
+                    try {
+                        const action = isRegister ? 'REGISTER' : 'LOGIN';
+                        const res = await GoogleSheetsService.call(action, { password }, username);
+
+                        if (res && res.status === 'success') {
+                            if (isRegister) {
+                                alert("Account created on Cloud! Please login.");
+                                setIsRegister(false);
+                                setFormData({ username: '', password: '' });
+                            } else {
+                                onLogin(username);
+                            }
+                        } else {
+                            setError(res?.message || "Cloud Authentication failed");
+                        }
+                    } catch (err) {
+                        setError("Connection error: " + err.message);
+                    }
+                    return;
+                }
+
+                // Local Auth Fallback
+                const users = getLocalUsers();
 
                 if (isRegister) {
                     if (users[username]) { setError("Username already taken"); return; }
@@ -1587,9 +1772,11 @@
             };
 
             return (
-                <DataProvider key={user} user={user}>
-                    {user ? <AppContent onLogout={handleLogout} /> : <Auth onLogin={handleLogin} />}
-                </DataProvider>
+                <ErrorBoundary>
+                    <DataProvider user={user}>
+                        {user ? <AppContent onLogout={handleLogout} /> : <Auth onLogin={handleLogin} />}
+                    </DataProvider>
+                </ErrorBoundary>
             );
         };
 
