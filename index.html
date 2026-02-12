@@ -1,0 +1,1601 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RestroBuddy - Restaurant Management</title>
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#fc8019',
+                        secondary: '#333333',
+                        background: '#f8f8f8',
+                        surface: '#ffffff',
+                        danger: '#ef4444',
+                        success: '#22c55e',
+                        warning: '#f59e0b',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8f8f8;
+            color: #333;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, createContext, useContext, useRef, useReducer } = React;
+
+        // --- ICON COMPONENT ---
+        const Icon = ({ name, size = 20, className = "" }) => {
+            const iconRef = useRef(null);
+
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons({
+                        root: iconRef.current?.parentNode,
+                        nameAttrs: { 'data-lucide': name },
+                        attrs: {
+                            class: `lucide lucide-${name} ${className}`,
+                            width: size,
+                            height: size
+                        }
+                    });
+                }
+            }, [name, size, className]);
+
+            return <i ref={iconRef} data-lucide={name} className={className}></i>;
+        };
+
+        // --- UI COMPONENTS (ShadCN style) ---
+        const Card = ({ children, className = "" }) => <div className={`bg-white rounded-xl shadow-sm border border-slate-100 ${className}`}>{children}</div>;
+        const CardHeader = ({ children, className = "" }) => <div className={`p-6 pb-2 ${className}`}>{children}</div>;
+        const CardTitle = ({ children, className = "" }) => <h3 className={`text-lg font-semibold text-slate-800 ${className}`}>{children}</h3>;
+        const CardContent = ({ children, className = "" }) => <div className={`p-6 pt-2 ${className}`}>{children}</div>;
+
+        const Button = ({ children, onClick, type = "button", variant = "primary", size = "md", className = "", disabled = false }) => {
+            const variants = {
+                primary: "bg-primary text-white hover:bg-orange-600 shadow-sm",
+                secondary: "bg-slate-100 text-slate-900 hover:bg-slate-200",
+                outline: "border border-slate-200 hover:bg-slate-50 text-slate-700",
+                ghost: "hover:bg-slate-100 text-slate-700",
+                danger: "bg-red-500 text-white hover:bg-red-600",
+                success: "bg-green-500 text-white hover:bg-green-600"
+            };
+            const sizes = {
+                sm: "px-3 py-1.5 text-sm",
+                md: "px-4 py-2",
+                lg: "px-6 py-3 text-lg",
+                icon: "p-2"
+            };
+            return (
+                <button
+                    type={type}
+                    onClick={onClick}
+                    disabled={disabled}
+                    className={`rounded-lg font-medium transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 ${variants[variant]} ${sizes[size]} ${className}`}
+                >
+                    {children}
+                </button>
+            );
+        };
+
+        const NotificationBell = () => {
+            const { notifications, markNotificationsRead, clearNotifications } = useData();
+            const [isOpen, setIsOpen] = useState(false);
+            const unreadCount = notifications.filter(n => !n.read).length;
+
+            return (
+                <div className="relative">
+                    <button
+                        onClick={() => { setIsOpen(!isOpen); if (!isOpen) markNotificationsRead(); }}
+                        className="relative p-2 text-slate-500 hover:bg-slate-100 rounded-full transition-colors"
+                    >
+                        <Icon name="bell" size={20} />
+                        {unreadCount > 0 && (
+                            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-white"></span>
+                        )}
+                    </button>
+
+                    {isOpen && (
+                        <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)}></div>
+                            <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-xl border border-slate-100 z-50 animate-in fade-in zoom-in-95 origin-top-right overflow-hidden">
+                                <div className="flex items-center justify-between p-3 border-b border-slate-50 bg-slate-50/50">
+                                    <h3 className="font-semibold text-sm text-slate-800">Notifications</h3>
+                                    {notifications.length > 0 && (
+                                        <button onClick={clearNotifications} className="text-xs text-slate-400 hover:text-red-500">Clear all</button>
+                                    )}
+                                </div>
+                                <div className="max-h-80 overflow-y-auto">
+                                    {notifications.length === 0 ? (
+                                        <div className="p-8 text-center text-slate-400 text-sm">
+                                            <Icon name="bell-off" size={24} className="mx-auto mb-2 opacity-50" />
+                                            <p>No notifications</p>
+                                        </div>
+                                    ) : (
+                                        <div className="divide-y divide-slate-50">
+                                            {notifications.map(n => (
+                                                <div key={n.id} className={`p-3 hover:bg-slate-50 transition-colors ${!n.read ? 'bg-blue-50/30' : ''}`}>
+                                                    <div className="flex gap-3">
+                                                        <div className={`mt-1 w-2 h-2 rounded-full shrink-0 ${n.type === 'error' ? 'bg-red-500' : n.type === 'success' ? 'bg-green-500' : 'bg-blue-500'}`}></div>
+                                                        <div>
+                                                            <p className="text-sm font-medium text-slate-800">{n.title}</p>
+                                                            {n.message && <p className="text-xs text-slate-500 mt-0.5">{n.message}</p>}
+                                                            <p className="text-[10px] text-slate-400 mt-1.5">{new Date(n.date).toLocaleTimeString()}</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+            );
+        };
+
+        const Input = ({ ...props }) => <input className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm" {...props} />;
+        const Label = ({ children }) => <label className="block text-sm font-medium text-slate-700 mb-1">{children}</label>;
+        const Select = ({ children, ...props }) => <select className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-white text-sm" {...props}>{children}</select>;
+        const Badge = ({ children, variant = "default" }) => {
+            const variants = {
+                default: "bg-slate-100 text-slate-800",
+                success: "bg-green-100 text-green-700",
+                warning: "bg-yellow-100 text-yellow-800",
+                danger: "bg-red-100 text-red-700",
+                primary: "bg-orange-100 text-orange-700"
+            };
+            return <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${variants[variant]}`}>{children}</span>;
+        };
+
+        // --- SEED DATA ---
+        const SEED_DATA = {
+            inventory: [],
+            menu: [],
+            orders: [],
+            pos: [],
+            transactions: [],
+            notifications: []
+        };
+
+        // --- DATA CONTEXT ---
+        const DataContext = createContext();
+
+
+
+        const DataProvider = ({ children, user }) => {
+            // Determine storage prefix based on user. Fallback to 'rb_' for backward compat or guest.
+            const prefix = user ? `rb_${user}_` : 'rb_';
+
+            const [inventory, setInventory] = useState(() => JSON.parse(localStorage.getItem(`${prefix}inventory`)) || SEED_DATA.inventory);
+            const [menu, setMenu] = useState(() => JSON.parse(localStorage.getItem(`${prefix}menu`)) || SEED_DATA.menu);
+            const [orders, setOrders] = useState(() => JSON.parse(localStorage.getItem(`${prefix}orders`)) || SEED_DATA.orders);
+            const [purchaseOrders, setPurchaseOrders] = useState(() => JSON.parse(localStorage.getItem(`${prefix}pos`)) || SEED_DATA.pos);
+            const [transactions, setTransactions] = useState(() => JSON.parse(localStorage.getItem(`${prefix}transactions`)) || SEED_DATA.transactions);
+            const [notifications, setNotifications] = useState(() => JSON.parse(localStorage.getItem(`${prefix}notifications`)) || SEED_DATA.notifications);
+
+            useEffect(() => { localStorage.setItem(`${prefix}inventory`, JSON.stringify(inventory)); }, [inventory, prefix]);
+            useEffect(() => { localStorage.setItem(`${prefix}menu`, JSON.stringify(menu)); }, [menu, prefix]);
+            useEffect(() => { localStorage.setItem(`${prefix}orders`, JSON.stringify(orders)); }, [orders, prefix]);
+            useEffect(() => { localStorage.setItem(`${prefix}pos`, JSON.stringify(purchaseOrders)); }, [purchaseOrders, prefix]);
+            useEffect(() => { localStorage.setItem(`${prefix}transactions`, JSON.stringify(transactions)); }, [transactions, prefix]);
+            useEffect(() => { localStorage.setItem(`${prefix}notifications`, JSON.stringify(notifications)); }, [notifications, prefix]);
+
+            // Notification helpers
+            const addNotification = (title, message = '', type = 'info') => {
+                const newNote = {
+                    id: Date.now(),
+                    title,
+                    message,
+                    type,
+                    date: new Date().toISOString(),
+                    read: false
+                };
+                setNotifications(prev => [newNote, ...prev].slice(0, 50));
+            };
+
+            const markNotificationsRead = () => {
+                setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+            };
+
+            const clearNotifications = () => {
+                if (confirm("Clear all notifications?")) setNotifications([]);
+            };
+            useEffect(() => { localStorage.setItem('rb_notifications', JSON.stringify(notifications)); }, [notifications]);
+
+            const addOrder = (items) => {
+                const total = items.reduce((sum, item) => sum + (item.price * item.qty), 0);
+                const newOrder = {
+                    id: `ORD-${Math.floor(Math.random() * 10000)}`,
+                    items,
+                    status: 'pending',
+                    total,
+                    date: new Date().toISOString()
+                };
+
+                // Inventory deduction moved to 'ready' status update
+
+                // setInventory(newInventory); // Moved to updateOrderStatus
+                setOrders([newOrder, ...orders]);
+                setTransactions([...transactions, { id: Date.now(), type: 'income', amount: total, date: new Date().toISOString(), desc: `Order #${newOrder.id}` }]);
+                addNotification("Order Placed", `New order #${newOrder.id} - $${total.toFixed(2)}`, "info");
+                return newOrder.id;
+            };
+
+            const updateOrderStatus = (orderId, status) => {
+                const order = orders.find(o => o.id === orderId);
+                if (!order) return;
+
+                if (status === 'ready' && !order.deducted) {
+                    // Deduct Inventory
+                    const newInventory = [...inventory];
+                    order.items.forEach(orderItem => {
+                        const menuItem = menu.find(m => m.id === orderItem.id);
+                        if (menuItem && menuItem.ingredients) {
+                            menuItem.ingredients.forEach(ing => {
+                                const stockItemIdx = newInventory.findIndex(i => i.id === ing.id);
+                                if (stockItemIdx > -1) {
+                                    newInventory[stockItemIdx].stock -= (ing.qty * orderItem.qty);
+                                }
+                            });
+                        }
+                    });
+                    setInventory(newInventory);
+                    setOrders(orders.map(o => o.id === orderId ? { ...o, status, deducted: true } : o));
+                    addNotification("Order Ready", `Order #${orderId} is ready for pickup.`, "success");
+                } else if (status === 'cancelled') {
+                    // Restore Inventory if deducted
+                    if (order.deducted) {
+                        const newInventory = [...inventory];
+                        order.items.forEach(orderItem => {
+                            const menuItem = menu.find(m => m.id === orderItem.id);
+                            if (menuItem && menuItem.ingredients) {
+                                menuItem.ingredients.forEach(ing => {
+                                    const stockItemIdx = newInventory.findIndex(i => i.id === ing.id);
+                                    if (stockItemIdx > -1) {
+                                        newInventory[stockItemIdx].stock += (ing.qty * orderItem.qty);
+                                    }
+                                });
+                            }
+                        });
+                        setInventory(newInventory);
+                        setOrders(orders.map(o => o.id === orderId ? { ...o, status, deducted: false } : o));
+                    } else {
+                        // Just cancel without restore
+                        setOrders(orders.map(o => o.id === orderId ? { ...o, status } : o));
+                    }
+                } else {
+                    setOrders(orders.map(o => o.id === orderId ? { ...o, status } : o));
+                }
+            };
+
+            const addIngredient = (ing) => {
+                if (ing.id) {
+                    setInventory(inventory.map(i => i.id === ing.id ? ing : i));
+                } else {
+                    setInventory([...inventory, { ...ing, id: Date.now() }]);
+                }
+            };
+
+            const deleteIngredient = (id) => {
+                setInventory(inventory.filter(i => i.id !== id));
+            };
+
+            const addExpense = (amount, desc) => {
+                setTransactions([...transactions, { id: Date.now(), type: 'expense', amount: parseFloat(amount), date: new Date().toISOString(), desc }]);
+            };
+
+            const restockIngredient = (id, qty, cost) => {
+                const ingredient = inventory.find(i => i.id === id);
+                if (ingredient) {
+                    const newInventory = inventory.map(i =>
+                        i.id === id ? { ...i, stock: i.stock + parseFloat(qty) } : i
+                    );
+                    setInventory(newInventory);
+                    // Use cost passed or calculate based on unit cost?
+                    // For manual restock form, we pass total cost directly
+                    addExpense(cost, `Restock: ${ingredient.name} (+${qty} ${ingredient.unit})`);
+                }
+            };
+
+
+            const addPO = (po) => {
+                setPurchaseOrders([...purchaseOrders, { ...po, id: `PO-${Date.now()}`, status: 'pending' }]);
+            };
+
+            const receivePO = (poId) => {
+                const po = purchaseOrders.find(p => p.id === poId);
+                if (po && po.status !== 'received') {
+                    const newInventory = [...inventory];
+                    let totalCost = 0;
+                    po.items.forEach(item => {
+                        const stockItemIdx = newInventory.findIndex(i => i.id === item.id);
+                        if (stockItemIdx > -1) {
+                            newInventory[stockItemIdx].stock += parseFloat(item.qty);
+                            // Update cost if needed? For now we just use the PO unit cost for expense
+                            totalCost += (item.qty * item.unitCost);
+                        }
+                    });
+                    setInventory(newInventory);
+                    setPurchaseOrders(purchaseOrders.map(p => p.id === poId ? { ...p, status: 'received' } : p));
+                    addExpense(totalCost, `PO Received: #${poId} (${po.vendor})`);
+                    addNotification("PO Received", `Received order from ${po.vendor}. Inventory updated.`, "success");
+                }
+            };
+
+            const updatePODate = (poId, newDate) => {
+                setPurchaseOrders(purchaseOrders.map(p => p.id === poId ? { ...p, deliveryDate: newDate } : p));
+                addNotification("PO Updated", `Delivery date updated for PO: ${poId}`, "info");
+            };
+
+            const deletePO = (poId) => {
+                const po = purchaseOrders.find(p => p.id === poId);
+                setPurchaseOrders(purchaseOrders.filter(p => p.id !== poId));
+                if (po) addNotification("PO Deleted", `Order to ${po.vendor} was deleted.`, "info");
+            };
+
+
+
+
+            const addMenu = (item) => {
+                if (item.id) {
+                    setMenu(menu.map(m => m.id === item.id ? item : m));
+                } else {
+                    setMenu([...menu, { ...item, id: Date.now() }]);
+                }
+            };
+
+            const deleteMenu = (id) => {
+                setMenu(menu.filter(m => m.id !== id));
+            };
+
+            const resetData = () => {
+                Object.keys(localStorage).forEach(key => {
+                    if (key.startsWith(prefix)) localStorage.removeItem(key);
+                });
+                window.location.reload();
+            };
+
+            return (
+                <DataContext.Provider value={{
+                    inventory, menu, orders, transactions, purchaseOrders, notifications,
+                    addOrder, updateOrderStatus, addIngredient, deleteIngredient, addExpense, resetData,
+                    addMenu, deleteMenu, restockIngredient,
+                    addPO, receivePO, updatePODate, deletePO,
+                    addNotification, markNotificationsRead, clearNotifications
+                }}>
+                    {children}
+                </DataContext.Provider>
+            );
+        };
+
+        const useData = () => useContext(DataContext);
+
+        // --- DASHBOARD VIEW ---
+        const Dashboard = () => {
+            const { orders, transactions, inventory } = useData();
+
+            const today = new Date().toDateString();
+            const todayOrders = orders.filter(o => new Date(o.date).toDateString() === today);
+            const todayRevenue = transactions
+                .filter(t => t.type === 'income' && new Date(t.date).toDateString() === today)
+                .reduce((sum, t) => sum + t.amount, 0);
+
+            const criticalStock = inventory.filter(i => i.stock <= 0).length;
+            const lowStock = inventory.filter(i => i.stock > 0 && i.stock <= i.minStock).length;
+
+            // Simple Chart Data (Last 5 orders revenue)
+            const recentRevenue = transactions.filter(t => t.type === 'income').slice(-7);
+            const maxRev = Math.max(...recentRevenue.map(r => r.amount), 100);
+
+            return (
+                <div className="space-y-6 fade-in">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <Card className="border-l-4 border-l-primary">
+                            <CardContent className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-slate-500 font-medium">Daily Revenue</p>
+                                    <h2 className="text-2xl font-bold">${todayRevenue.toFixed(2)}</h2>
+                                </div>
+                                <div className="p-3 bg-orange-100 rounded-full text-primary"><Icon name="dollar-sign" /></div>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardContent className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-slate-500 font-medium">Today's Orders</p>
+                                    <h2 className="text-2xl font-bold">{todayOrders.length}</h2>
+                                </div>
+                                <div className="p-3 bg-blue-100 rounded-full text-blue-600"><Icon name="shopping-bag" /></div>
+                            </CardContent>
+                        </Card>
+                        <Card className={criticalStock > 0 ? "border-l-4 border-l-red-500" : ""}>
+                            <CardContent className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm text-slate-500 font-medium">Stock Alerts</p>
+                                    <h2 className="text-2xl font-bold flex gap-2">
+                                        {criticalStock > 0 && <span className="text-red-500">{criticalStock} Critical</span>}
+                                        {lowStock > 0 && <span className="text-yellow-500">{lowStock} Low</span>}
+                                        {criticalStock === 0 && lowStock === 0 && <span className="text-green-500">OK</span>}
+                                    </h2>
+                                </div>
+                                <div className="p-3 bg-red-100 rounded-full text-red-600"><Icon name="alert-triangle" /></div>
+                            </CardContent>
+                        </Card>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <Card>
+                            <CardHeader><CardTitle>Recent Revenue</CardTitle></CardHeader>
+                            <CardContent>
+                                <div className="h-48 flex items-end gap-2 justify-between px-2">
+                                    {recentRevenue.map((r, i) => (
+                                        <div key={i} className="flex-1 flex flex-col items-center gap-1 group">
+                                            <div
+                                                className="w-full bg-primary/20 hover:bg-primary transition-all rounded-t-sm relative"
+                                                style={{ height: `${(r.amount / maxRev) * 100}%` }}
+                                            >
+                                                <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    ${r.amount}
+                                                </div>
+                                            </div>
+                                            <span className="text-xs text-slate-400">Order</span>
+                                        </div>
+                                    ))}
+                                    {recentRevenue.length === 0 && <p className="w-full text-center text-slate-400">No data yet</p>}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- POS VIEW ---
+        const POS = () => {
+            const { menu, addOrder } = useData();
+            const [cart, setCart] = useState([]);
+            const [searchTerm, setSearchTerm] = useState("");
+            const [selectedCategory, setSelectedCategory] = useState("All");
+
+            const categories = ["All", ...new Set(menu.map(m => m.category))];
+
+            const addToCart = (item) => {
+                const existing = cart.find(c => c.id === item.id);
+                if (existing) {
+                    setCart(cart.map(c => c.id === item.id ? { ...c, qty: c.qty + 1 } : c));
+                } else {
+                    setCart([...cart, { ...item, qty: 1 }]);
+                }
+            };
+
+            const updateQty = (id, delta) => {
+                setCart(cart.map(c => {
+                    if (c.id === id) return { ...c, qty: Math.max(0, c.qty + delta) };
+                    return c;
+                }).filter(c => c.qty > 0));
+            };
+
+            const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+
+            const filteredMenu = menu.filter(m =>
+                (selectedCategory === "All" || m.category === selectedCategory) &&
+                m.name.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+
+            const handleCheckout = () => {
+                if (cart.length === 0) return;
+                addOrder(cart);
+                setCart([]);
+                alert("Order Placed Successfully!");
+            };
+
+            return (
+                <div className="flex flex-col lg:flex-row h-full gap-6 fade-in text-sm lg:text-base">
+                    <div className="flex-1 flex flex-col gap-4">
+                        <div className="flex gap-4 items-center bg-white p-4 rounded-xl shadow-sm">
+                            <div className="relative flex-1">
+                                <Icon name="search" className="absolute left-3 top-2.5 text-slate-400" size={18} />
+                                <input
+                                    type="text"
+                                    placeholder="Search menu..."
+                                    className="w-full pl-10 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                                    value={searchTerm}
+                                    onChange={e => setSearchTerm(e.target.value)}
+                                />
+                            </div>
+                            <div className="flex gap-2 overflow-x-auto pb-1">
+                                {categories.map(c => (
+                                    <button
+                                        key={c}
+                                        onClick={() => setSelectedCategory(c)}
+                                        className={`px-4 py-2 rounded-lg whitespace-nowrap transition-colors ${selectedCategory === c ? 'bg-secondary text-white' : 'bg-white border hover:bg-slate-50 text-slate-600'}`}
+                                    >
+                                        {c}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 overflow-y-auto pr-1 pb-4" style={{ maxHeight: 'calc(100vh - 200px)' }}>
+                            {filteredMenu.map(item => (
+                                <div key={item.id}
+                                    onClick={() => addToCart(item)}
+                                    className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 cursor-pointer hover:shadow-md hover:border-primary/50 transition-all flex flex-col justify-between h-40 group"
+                                >
+                                    <div>
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className="text-xs font-semibold px-2 py-1 bg-slate-100 rounded text-slate-500">{item.category}</span>
+                                        </div>
+                                        <h3 className="font-bold text-slate-800 leading-tight mb-1">{item.name}</h3>
+                                    </div>
+                                    <div className="flex justify-between items-center mt-2">
+                                        <span className="font-bold text-primary text-lg">${item.price}</span>
+                                        <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 group-hover:bg-primary group-hover:text-white transition-colors">
+                                            <Icon name="plus" size={16} />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    <Card className="w-full lg:w-96 flex flex-col h-[calc(100vh-6rem)]">
+                        <CardHeader className="border-b border-slate-100 bg-slate-50/50">
+                            <CardTitle className="flex justify-between items-center">
+                                Current Order
+                                <Badge variant="primary">{cart.length} Items</Badge>
+                            </CardTitle>
+                        </CardHeader>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                            {cart.length === 0 ? (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2">
+                                    <Icon name="shopping-cart" size={48} className="text-slate-200" />
+                                    <p>Cart is empty</p>
+                                </div>
+                            ) : (
+                                cart.map(item => (
+                                    <div key={item.id} className="flex justify-between items-center bg-slate-50 p-2 rounded-lg">
+                                        <div className="flex-1">
+                                            <p className="font-medium text-slate-800">{item.name}</p>
+                                            <p className="text-xs text-primary font-bold">${item.price}</p>
+                                        </div>
+                                        <div className="flex items-center gap-3 bg-white border border-slate-200 rounded px-2 py-1">
+                                            <button onClick={(e) => { e.stopPropagation(); updateQty(item.id, -1); }} className="text-slate-400 hover:text-primary"><Icon name="minus" size={14} /></button>
+                                            <span className="font-medium w-4 text-center text-sm">{item.qty}</span>
+                                            <button onClick={(e) => { e.stopPropagation(); updateQty(item.id, 1); }} className="text-slate-400 hover:text-primary"><Icon name="plus" size={14} /></button>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        <div className="p-4 border-t border-slate-100 bg-slate-50">
+                            <div className="flex justify-between items-center mb-4">
+                                <span className="text-slate-500">Total</span>
+                                <span className="text-2xl font-bold text-slate-800">${cartTotal.toFixed(2)}</span>
+                            </div>
+                            <Button className="w-full py-3 text-lg" disabled={cart.length === 0} onClick={handleCheckout}>
+                                Place Order
+                            </Button>
+                        </div>
+                    </Card>
+                </div>
+            )
+        };
+
+        // --- KITCHEN VIEW (KDS) ---
+        const Kitchen = () => {
+            const { orders, updateOrderStatus } = useData();
+            const activeOrders = orders.filter(o => o.status !== 'completed' && o.status !== 'cancelled').sort((a, b) => new Date(a.date) - new Date(b.date));
+
+            const columns = [
+                { id: 'pending', label: 'Pending', color: 'bg-yellow-50 border-yellow-200' },
+                { id: 'cooking', label: 'Cooking', color: 'bg-blue-50 border-blue-200' },
+                { id: 'ready', label: 'Ready', color: 'bg-green-50 border-green-200' }
+            ];
+
+            const handleNext = (order) => {
+                const flow = ['pending', 'cooking', 'ready', 'completed'];
+                const nextIdx = flow.indexOf(order.status) + 1;
+                if (nextIdx < flow.length) updateOrderStatus(order.id, flow[nextIdx]);
+            };
+
+            return (
+                <div className="h-full overflow-x-auto fade-in">
+                    <div className="flex gap-4 h-full min-w-[1000px]">
+                        {columns.map(col => (
+                            <div key={col.id} className={`flex-1 rounded-xl p-4 flex flex-col gap-4 ${col.color} border h-full`}>
+                                <div className="flex justify-between items-center pb-2 border-b border-black/5">
+                                    <h3 className="font-bold text-slate-700 uppercase tracking-wider text-sm">{col.label}</h3>
+                                    <Badge>{activeOrders.filter(o => o.status === col.id).length}</Badge>
+                                </div>
+                                <div className="space-y-3 overflow-y-auto flex-1">
+                                    {activeOrders.filter(o => o.status === col.id).map(order => (
+                                        <Card key={order.id} className="shadow-sm hover:shadow-md transition-shadow">
+                                            <div className="p-4">
+                                                <div className="flex justify-between items-start mb-3">
+                                                    <span className="font-mono text-xs font-bold text-slate-500">#{order.id.split('-')[1]}</span>
+                                                    <span className="text-xs text-slate-400">{new Date(order.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                                </div>
+                                                <div className="space-y-1 mb-4">
+                                                    {order.items.map((item, idx) => (
+                                                        <div key={idx} className="flex justify-between text-sm">
+                                                            <span className="text-slate-800 font-medium">{item.qty}x {item.name}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    {col.id === 'pending' && (
+                                                        <Button size="sm" variant="danger" className="w-full" onClick={() => updateOrderStatus(order.id, 'cancelled')}>
+                                                            Cancel
+                                                        </Button>
+                                                    )}
+                                                    <Button size="sm" className="w-full" onClick={() => handleNext(order)}>
+                                                        Move to {col.id === 'pending' ? 'Cooking' : col.id === 'cooking' ? 'Ready' : 'Completed'}
+                                                    </Button>
+                                                </div>
+                                            </div>
+                                        </Card>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        // --- INVENTORY VIEW ---
+        const Inventory = () => {
+            const { inventory, addIngredient, deleteIngredient } = useData();
+            const [isEditing, setIsEditing] = useState(null);
+            const [formData, setFormData] = useState({ name: '', stock: 0, unit: 'kg', cost: 0, minStock: 0 });
+
+            const handleSave = (e) => {
+                e.preventDefault();
+                addIngredient({ ...formData, stock: parseFloat(formData.stock), cost: parseFloat(formData.cost), minStock: parseFloat(formData.minStock) });
+                setIsEditing(null);
+                setFormData({ name: '', stock: 0, unit: 'kg', cost: 0, minStock: 0 });
+            };
+
+            const startEdit = (item) => {
+                setFormData(item || { name: '', stock: 0, unit: 'kg', cost: 0, minStock: 0 });
+                setIsEditing(true);
+            };
+
+            return (
+                <div className="space-y-6 fade-in pb-10">
+                    <div className="flex justify-between items-center">
+                        <h2 className="text-2xl font-bold text-slate-800">Inventory</h2>
+                        <Button onClick={() => startEdit(null)}><Icon name="plus" size={18} /> Add Item</Button>
+                    </div>
+
+                    <Card>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-slate-50 text-slate-500 border-b border-slate-100">
+                                    <tr>
+                                        <th className="p-4 font-medium">Ingredient</th>
+                                        <th className="p-4 font-medium">Stock Level</th>
+                                        <th className="p-4 font-medium">Unit Cost</th>
+                                        <th className="p-4 font-medium">Unit</th>
+                                        <th className="p-4 font-medium">Status</th>
+                                        <th className="p-4 font-medium text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {inventory.map(item => (
+                                        <tr key={item.id} className="hover:bg-slate-50/50">
+                                            <td className="p-4 font-medium text-slate-800">{item.name}</td>
+                                            <td className="p-4">{item.stock}</td>
+                                            <td className="p-4">${item.cost ? parseFloat(item.cost).toFixed(2) : '0.00'}</td>
+                                            <td className="p-4 text-slate-500">{item.unit}</td>
+                                            <td className="p-4">
+                                                {item.stock <= 0 ? <Badge variant="danger">Critical</Badge> :
+                                                    item.stock <= item.minStock ? <Badge variant="warning">Low Warning</Badge> :
+                                                        <Badge variant="success">In Stock</Badge>}
+                                            </td>
+                                            <td className="p-4 text-right">
+                                                <button onClick={() => startEdit(item)} className="text-slate-400 hover:text-primary mr-2"><Icon name="edit-2" size={16} /></button>
+                                                <button onClick={() => { if (confirm(`Delete ${item.name}?`)) deleteIngredient(item.id); }} className="text-slate-400 hover:text-red-500"><Icon name="trash-2" size={16} /></button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </Card>
+
+                    {isEditing && (
+                        <div className="fixed inset-0 bg-black/20 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+                            <Card className="w-full max-w-md animate-in fade-in zoom-in-95 duration-200">
+                                <CardHeader><CardTitle>{formData.id ? 'Edit Ingredient' : 'New Ingredient'}</CardTitle></CardHeader>
+                                <CardContent>
+                                    <form onSubmit={handleSave} className="space-y-4">
+                                        <div>
+                                            <Label>Name</Label>
+                                            <Input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required />
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <Label>Stock</Label>
+                                                <Input type="number" step="0.1" value={formData.stock} onChange={e => setFormData({ ...formData, stock: e.target.value })} required />
+                                            </div>
+                                            <div>
+                                                <Select value={formData.unit} onChange={e => setFormData({ ...formData, unit: e.target.value })}>
+                                                    <option value="kg">kg</option>
+                                                    <option value="g">g</option>
+                                                    <option value="l">l</option>
+                                                    <option value="ml">ml</option>
+                                                    <option value="pc">pc</option>
+                                                    <option value="balls">balls</option>
+                                                </Select>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <Label>Unit Cost ($)</Label>
+                                            <Input type="number" step="0.01" value={formData.cost} onChange={e => setFormData({ ...formData, cost: e.target.value })} required />
+                                        </div>
+                                        <div>
+                                            <Label>Min Stock Alert</Label>
+                                            <Input type="number" step="0.1" value={formData.minStock} onChange={e => setFormData({ ...formData, minStock: e.target.value })} required />
+                                        </div>
+                                        <div className="flex gap-3 justify-end mt-6">
+                                            <Button type="button" variant="ghost" onClick={() => setIsEditing(null)}>Cancel</Button>
+                                            <Button type="submit">Save Changes</Button>
+                                        </div>
+                                    </form>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // --- MENU/RECIPES VIEW ---
+        const Menu = () => {
+            const { menu, inventory, addMenu, deleteMenu } = useData();
+            const [isEditing, setIsEditing] = useState(null);
+            const [formData, setFormData] = useState({ name: '', price: '', category: '', ingredients: [] });
+            const [newIng, setNewIng] = useState({ id: '', qty: '' });
+
+            const handleSave = (e) => {
+                e.preventDefault();
+                addMenu({ ...formData, price: parseFloat(formData.price) });
+                setIsEditing(null);
+                setFormData({ name: '', price: '', category: '', ingredients: [] });
+            };
+
+            const startEdit = (item) => {
+                setFormData(item || { name: '', price: '', category: '', ingredients: [] });
+                setIsEditing(true);
+            };
+
+            const handleDelete = (id) => {
+                if (confirm("Delete this dish?")) deleteMenu(id);
+            };
+
+            const addIngredientToDish = () => {
+                if (!newIng.id || !newIng.qty) return;
+                const ingro = inventory.find(i => i.id === parseInt(newIng.id));
+                if (!ingro) return;
+
+                setFormData({
+                    ...formData,
+                    ingredients: [...formData.ingredients, { id: parseInt(newIng.id), qty: parseFloat(newIng.qty) }]
+                });
+                setNewIng({ id: '', qty: '' });
+            };
+
+            const removeIngredientFromDish = (idx) => {
+                const newIngs = [...formData.ingredients];
+                newIngs.splice(idx, 1);
+                setFormData({ ...formData, ingredients: newIngs });
+            };
+
+            return (
+                <div className="space-y-6 fade-in pb-10">
+                    <div className="flex justify-between items-center">
+                        <h2 className="text-2xl font-bold text-slate-800">Menu & Recipes</h2>
+                        <Button onClick={() => startEdit(null)}><Icon name="plus" size={18} /> Add Dish</Button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {menu.map(item => (
+                            <Card key={item.id} className="group hover:border-primary/50 transition-colors relative">
+                                <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity bg-white/90 p-1 rounded-lg z-10 shadow-sm border border-slate-100">
+                                    <button onClick={(e) => { e.stopPropagation(); startEdit(item); }} className="text-slate-400 hover:text-primary"><Icon name="edit-2" size={16} /></button>
+                                    <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="text-slate-400 hover:text-danger"><Icon name="trash-2" size={16} /></button>
+                                </div>
+                                <CardHeader>
+                                    <div className="flex justify-between items-start">
+                                        <CardTitle>{item.name}</CardTitle>
+                                        <Badge variant="primary">${item.price}</Badge>
+                                    </div>
+                                    <span className="text-xs text-slate-500">{item.category}</span>
+                                </CardHeader>
+                                <CardContent>
+                                    <h4 className="text-sm font-semibold mb-2">Recipe (Ingredients):</h4>
+                                    <ul className="text-sm space-y-1 text-slate-600">
+                                        {item.ingredients.map((ing, idx) => {
+                                            const invItem = inventory.find(i => i.id === ing.id);
+                                            return (
+                                                <li key={idx} className="flex justify-between">
+                                                    <span>{invItem ? invItem.name : 'Unknown'}</span>
+                                                    <span className="text-slate-400">{ing.qty} {invItem ? invItem.unit : ''}</span>
+                                                </li>
+                                            );
+                                        })}
+                                        {item.ingredients.length === 0 && <li className="text-slate-400 italic">No ingredients listed</li>}
+                                    </ul>
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+
+                    {isEditing && (
+                        <div className="fixed inset-0 bg-black/20 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+                            <Card className="w-full max-w-2xl animate-in fade-in zoom-in-95 duration-200 shadow-2xl max-h-[90vh] overflow-y-auto">
+                                <CardHeader><CardTitle>{formData.id ? 'Edit Dish' : 'New Dish'}</CardTitle></CardHeader>
+                                <CardContent>
+                                    <form onSubmit={handleSave} className="space-y-4">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <Label>Dish Name</Label>
+                                                <Input value={formData.name} onChange={e => setFormData({ ...formData, name: e.target.value })} required placeholder="e.g. Pasta Carbonara" />
+                                            </div>
+                                            <div>
+                                                <Label>Category</Label>
+                                                <div className="relative">
+                                                    <input
+                                                        list="categories"
+                                                        value={formData.category}
+                                                        onChange={e => setFormData({ ...formData, category: e.target.value })}
+                                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all text-sm"
+                                                        placeholder="Select or type..."
+                                                        required
+                                                    />
+                                                    <datalist id="categories">
+                                                        <option value="Pizza" />
+                                                        <option value="Pasta" />
+                                                        <option value="Salad" />
+                                                        <option value="Sides" />
+                                                        <option value="Beverages" />
+                                                        <option value="Dessert" />
+                                                    </datalist>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <Label>Price ($)</Label>
+                                            <Input type="number" step="0.01" value={formData.price} onChange={e => setFormData({ ...formData, price: e.target.value })} required placeholder="0.00" />
+                                        </div>
+
+                                        <div className="border-t border-slate-100 pt-4 mt-4">
+                                            <Label>Recipe Ingredients</Label>
+                                            <div className="flex gap-2 mb-3 items-end bg-slate-50/50 p-3 rounded-lg border border-slate-100">
+                                                <div className="flex-1">
+                                                    <span className="text-xs text-slate-500 mb-1 block font-medium">Ingredient</span>
+                                                    <Select value={newIng.id} onChange={e => setNewIng({ ...newIng, id: e.target.value })}>
+                                                        <option value="">Select Ingredient...</option>
+                                                        {inventory.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
+                                                    </Select>
+                                                </div>
+                                                <div className="w-24">
+                                                    <span className="text-xs text-slate-500 mb-1 block font-medium">Qty</span>
+                                                    <Input type="number" step="0.01" value={newIng.qty} onChange={e => setNewIng({ ...newIng, qty: e.target.value })} placeholder="0.0" />
+                                                </div>
+                                                <div className="mb-px">
+                                                    <Button type="button" onClick={addIngredientToDish} variant="secondary" size="md">Add</Button>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                                {formData.ingredients.length === 0 && <p className="text-xs text-slate-400 text-center py-4 border border-slate-100 border-dashed rounded-lg bg-slate-50/50">No ingredients added yet.</p>}
+                                                {formData.ingredients.map((ing, idx) => {
+                                                    const invItem = inventory.find(i => i.id === ing.id);
+                                                    return (
+                                                        <div key={idx} className="flex justify-between items-center bg-white p-2.5 rounded-lg border border-slate-200 shadow-sm text-sm group hover:border-primary/30 transition-colors">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="w-6 h-6 rounded bg-slate-100 flex items-center justify-center text-slate-500 text-xs font-bold">{idx + 1}</div>
+                                                                <span className="font-medium text-slate-700">{invItem ? invItem.name : 'Unknown Item'}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-4">
+                                                                <span className="text-slate-500 font-mono bg-slate-50 px-2 py-0.5 rounded border border-slate-100">{ing.qty} {invItem ? invItem.unit : ''}</span>
+                                                                <button type="button" onClick={() => removeIngredientFromDish(idx)} className="text-slate-300 hover:text-red-500 transition-colors"><Icon name="trash-2" size={16} /></button>
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex gap-3 justify-end pt-4 border-t border-slate-100">
+                                            <Button type="button" variant="ghost" onClick={() => setIsEditing(null)}>Cancel</Button>
+                                            <Button type="submit">Save Dish</Button>
+                                        </div>
+                                    </form>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // --- ORDERS HISTORY VIEW ---
+        const OrdersHistory = () => {
+            const { orders } = useData();
+            const completedOrders = orders.filter(o => o.status === 'completed' || o.status === 'cancelled').sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            return (
+                <div className="space-y-6 fade-in pb-10">
+                    <h2 className="text-2xl font-bold text-slate-800">Orders History</h2>
+                    <Card>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm">
+                                <thead className="bg-slate-50 text-slate-500 border-b border-slate-100">
+                                    <tr>
+                                        <th className="p-4 font-medium">Order ID</th>
+                                        <th className="p-4 font-medium">Date & Time</th>
+                                        <th className="p-4 font-medium">Items</th>
+                                        <th className="p-4 font-medium">Total</th>
+                                        <th className="p-4 font-medium">Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {completedOrders.length === 0 && (
+                                        <tr>
+                                            <td colSpan="5" className="p-8 text-center text-slate-400">No completed orders yet.</td>
+                                        </tr>
+                                    )}
+                                    {completedOrders.map(order => (
+                                        <tr key={order.id} className="hover:bg-slate-50/50 transition-colors">
+                                            <td className="p-4 font-mono font-medium text-slate-700">#{order.id.split('-')[1]}</td>
+                                            <td className="p-4 text-slate-600">
+                                                {new Date(order.date).toLocaleDateString()} <span className="text-xs text-slate-400">{new Date(order.date).toLocaleTimeString()}</span>
+                                            </td>
+                                            <td className="p-4">
+                                                <div className="flex flex-col gap-1">
+                                                    {order.items.map((item, i) => (
+                                                        <span key={i} className="text-slate-600 text-xs">
+                                                            <span className="font-bold text-slate-800">{item.qty}x</span> {item.name}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </td>
+                                            <td className="p-4 font-bold text-slate-800">${order.total.toFixed(2)}</td>
+                                            <td className="p-4">
+                                                <Badge variant={order.status === 'completed' ? 'success' : 'danger'}>
+                                                    {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                                                </Badge>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </Card>
+                </div>
+            );
+        };
+
+        // --- RESTOCK VIEW ---
+        const Restock = () => {
+            const { inventory, restockIngredient } = useData();
+            const [selectedId, setSelectedId] = useState("");
+            const [qty, setQty] = useState("");
+            const [unitCost, setUnitCost] = useState("");
+
+            const handleRestock = (e) => {
+                e.preventDefault();
+                if (!selectedId || !qty || !unitCost) return;
+                const totalCost = parseFloat(qty) * parseFloat(unitCost);
+                restockIngredient(parseInt(selectedId), parseFloat(qty), totalCost);
+                setQty("");
+                setUnitCost("");
+                addNotification("Restock Successful", `Added ${qty} units. Cost: $${totalCost.toFixed(2)}`, "success");
+            };
+
+            const selectedItem = inventory.find(i => i.id === parseInt(selectedId));
+
+            return (
+                <div className="max-w-2xl mx-auto fade-in">
+                    <h2 className="text-2xl font-bold text-slate-800 mb-6">Restock Inventory</h2>
+                    <Card>
+                        <CardHeader><CardTitle>Log Purchase & Update Stock</CardTitle></CardHeader>
+                        <CardContent>
+                            <form onSubmit={handleRestock} className="space-y-6">
+                                <div>
+                                    <Label>Select Ingredient</Label>
+                                    <Select value={selectedId} onChange={e => setSelectedId(e.target.value)} required>
+                                        <option value="">-- Select Item --</option>
+                                        {inventory.map(item => (
+                                            <option key={item.id} value={item.id}>
+                                                {item.name} (Current: {item.stock} {item.unit})
+                                            </option>
+                                        ))}
+                                    </Select>
+                                </div>
+
+                                {selectedItem && (
+                                    <div className="bg-blue-50 p-4 rounded-lg flex gap-4 items-center text-blue-700 text-sm">
+                                        <Icon name="info" size={16} />
+                                        <span>Current Stock: <strong>{selectedItem.stock} {selectedItem.unit}</strong></span>
+                                        <span>|</span>
+                                        <span>Est. Cost: <strong>${selectedItem.cost}/{selectedItem.unit}</strong></span>
+                                    </div>
+                                )}
+
+                                <div className="grid grid-cols-2 gap-6">
+                                    <div>
+                                        <Label>Quantity Added ({selectedItem ? selectedItem.unit : 'Unit'})</Label>
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            value={qty}
+                                            onChange={e => setQty(e.target.value)}
+                                            placeholder="0.00"
+                                            required
+                                        />
+                                    </div>
+                                    <div>
+                                        <Label>Unit Cost ($)</Label>
+                                        <Input
+                                            type="number"
+                                            step="0.01"
+                                            value={unitCost}
+                                            onChange={e => setUnitCost(e.target.value)}
+                                            placeholder="0.00"
+                                            required
+                                        />
+                                    </div>
+                                </div>
+
+                                <Button type="submit" size="lg" className="w-full" disabled={!selectedId}>
+                                    <Icon name="plus-circle" size={20} /> Confirm Restock
+                                </Button>
+                            </form>
+                        </CardContent>
+                    </Card>
+                </div>
+            );
+        };
+
+        // --- PURCHASE ORDERS VIEW ---
+        const PurchaseOrders = () => {
+            const { purchaseOrders, inventory, addPO, deletePO, receivePO, updatePODate } = useData();
+            const [isAdding, setIsAdding] = useState(false);
+            const [formData, setFormData] = useState({ vendor: '', deliveryDate: '', items: [] });
+            const [newItem, setNewItem] = useState({ id: '', qty: '', unitCost: '' });
+
+            const handleSave = (e) => {
+                e.preventDefault();
+                if (formData.items.length === 0) {
+                    alert("Please add at least one item.");
+                    return;
+                }
+                addPO(formData);
+                setIsAdding(false);
+                setFormData({ vendor: '', deliveryDate: '', items: [] });
+            };
+
+            const addItem = () => {
+                if (!newItem.id || !newItem.qty || !newItem.unitCost) return;
+                setFormData({
+                    ...formData,
+                    items: [...formData.items, { id: parseInt(newItem.id), qty: parseFloat(newItem.qty), unitCost: parseFloat(newItem.unitCost) }]
+                });
+                setNewItem({ id: '', qty: '', unitCost: '' });
+            };
+
+            const removeItem = (idx) => {
+                const newItems = [...formData.items];
+                newItems.splice(idx, 1);
+                setFormData({ ...formData, items: newItems });
+            };
+
+            const sortedPOs = [...purchaseOrders].sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate));
+
+            return (
+                <div className="space-y-6 fade-in pb-10">
+                    <div className="flex justify-between items-center">
+                        <h2 className="text-2xl font-bold text-slate-800">Purchase Orders</h2>
+                        <Button onClick={() => setIsAdding(true)}><Icon name="plus" size={18} /> New Order</Button>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-6">
+                        {sortedPOs.length === 0 && (
+                            <div className="text-center py-12 bg-slate-50 rounded-lg border border-slate-100 border-dashed">
+                                <p className="text-slate-400">No purchase orders found.</p>
+                            </div>
+                        )}
+                        {sortedPOs.map(po => (
+                            <Card key={po.id} className="relative overflow-hidden">
+                                <div className={`absolute left-0 top-0 bottom-0 w-1 ${po.status === 'received' ? 'bg-green-500' : po.status === 'cancelled' ? 'bg-red-500' : 'bg-orange-500'}`}></div>
+                                <CardContent className="pl-6">
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div>
+                                            <div className="flex items-center gap-3 mb-1">
+                                                <h3 className="font-bold text-lg text-slate-800">{po.vendor}</h3>
+                                                <Badge variant={po.status === 'received' ? 'success' : po.status === 'cancelled' ? 'danger' : 'warning'}>
+                                                    {po.status.toUpperCase()}
+                                                </Badge>
+                                            </div>
+                                            <p className="text-sm text-slate-500">Order ID: {po.id}</p>
+                                            <p className="text-sm text-slate-500">Delivery Date: <span className="font-medium text-slate-700">{new Date(po.deliveryDate).toLocaleDateString()}</span></p>
+                                        </div>
+                                        {po.status === 'pending' && (
+                                            <Button variant="danger" size="sm" onClick={() => { if (confirm("Cancel this PO?")) deletePO(po.id); }}>Cancel Order</Button>
+                                        )}
+                                    </div>
+
+                                    <div className="bg-slate-50 rounded-lg p-3 text-sm">
+                                        <div className="grid grid-cols-12 font-medium text-slate-500 mb-2 px-2">
+                                            <div className="col-span-6">Item</div>
+                                            <div className="col-span-2 text-center">Qty</div>
+                                            <div className="col-span-2 text-center">Cost</div>
+                                            <div className="col-span-2 text-right">Total</div>
+                                        </div>
+                                        <div className="space-y-1">
+                                            {po.items.map((item, idx) => {
+                                                const invItem = inventory.find(i => i.id === item.id);
+                                                return (
+                                                    <div key={idx} className="grid grid-cols-12 items-center px-2 py-1 border-b border-slate-100 last:border-0">
+                                                        <div className="col-span-6 font-medium text-slate-700">{invItem ? invItem.name : 'Unknown'}</div>
+                                                        <div className="col-span-2 text-center text-slate-600">{item.qty} {invItem?.unit}</div>
+                                                        <div className="col-span-2 text-center text-slate-600">${item.unitCost.toFixed(2)}</div>
+                                                        <div className="col-span-2 text-right font-medium text-slate-800">${(item.qty * item.unitCost).toFixed(2)}</div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        <div className="mt-3 pt-2 border-t border-slate-200 flex justify-end">
+                                            <span className="font-bold text-slate-800">Total: ${po.items.reduce((sum, i) => sum + (i.qty * i.unitCost), 0).toFixed(2)}</span>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        ))}
+                    </div>
+
+                    {isAdding && (
+                        <div className="fixed inset-0 bg-black/20 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+                            <Card className="w-full max-w-2xl animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+                                <CardHeader><CardTitle>Create Purchase Order</CardTitle></CardHeader>
+                                <CardContent>
+                                    <form onSubmit={handleSave} className="space-y-4">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <Label>Vendor Name</Label>
+                                                <Input value={formData.vendor} onChange={e => setFormData({ ...formData, vendor: e.target.value })} required placeholder="e.g. Sysco" />
+                                            </div>
+                                            <div>
+                                                <Label>Delivery Date</Label>
+                                                <Input type="date" value={formData.deliveryDate} onChange={e => setFormData({ ...formData, deliveryDate: e.target.value })} required />
+                                            </div>
+                                        </div>
+
+                                        <div className="border-t border-slate-100 pt-4 mt-4">
+                                            <Label>Order Items</Label>
+                                            <div className="flex gap-2 mb-3 items-end bg-slate-50/50 p-3 rounded-lg border border-slate-100">
+                                                <div className="flex-1">
+                                                    <span className="text-xs text-slate-500 mb-1 block font-medium">Ingredient</span>
+                                                    <Select value={newItem.id} onChange={e => setNewItem({ ...newItem, id: e.target.value })}>
+                                                        <option value="">Select Item...</option>
+                                                        {inventory.map(i => <option key={i.id} value={i.id}>{i.name} ({i.unit})</option>)}
+                                                    </Select>
+                                                </div>
+                                                <div className="w-24">
+                                                    <span className="text-xs text-slate-500 mb-1 block font-medium">Qty</span>
+                                                    <Input type="number" step="0.01" value={newItem.qty} onChange={e => setNewItem({ ...newItem, qty: e.target.value })} placeholder="0.0" />
+                                                </div>
+                                                <div className="w-24">
+                                                    <span className="text-xs text-slate-500 mb-1 block font-medium">Unit Cost</span>
+                                                    <Input type="number" step="0.01" value={newItem.unitCost} onChange={e => setNewItem({ ...newItem, unitCost: e.target.value })} placeholder="$0.00" />
+                                                </div>
+                                                <div className="mb-px">
+                                                    <Button type="button" onClick={addItem} variant="secondary" size="md">Add</Button>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                                {formData.items.length === 0 && <p className="text-xs text-slate-400 text-center py-4 border border-slate-100 border-dashed rounded-lg bg-slate-50/50">No items added yet.</p>}
+                                                {formData.items.map((item, idx) => {
+                                                    const invItem = inventory.find(i => i.id === item.id);
+                                                    return (
+                                                        <div key={idx} className="flex justify-between items-center bg-white p-2.5 rounded-lg border border-slate-200 shadow-sm text-sm">
+                                                            <div className="flex items-center gap-3">
+                                                                <span className="font-medium text-slate-700">{invItem ? invItem.name : 'Unknown Item'}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-4">
+                                                                <span className="text-slate-500 text-xs">{item.qty} {invItem?.unit} @ ${item.unitCost}</span>
+                                                                <span className="font-medium text-slate-800">${(item.qty * item.unitCost).toFixed(2)}</span>
+                                                                <button type="button" onClick={() => removeItem(idx)} className="text-slate-300 hover:text-red-500 transition-colors"><Icon name="trash-2" size={16} /></button>
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex gap-3 justify-end pt-4 border-t border-slate-100">
+                                            <Button type="button" variant="ghost" onClick={() => setIsAdding(false)}>Cancel</Button>
+                                            <Button type="submit">Create Order</Button>
+                                        </div>
+                                    </form>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // --- DETAILS / SETTINGS / RESTOCK VIEW ---
+        const Settings = () => {
+            const { resetData, addExpense } = useData();
+            const [expense, setExpense] = useState({ desc: '', amount: '' });
+
+            const handleAddExpense = (e) => {
+                e.preventDefault();
+                addExpense(expense.amount, expense.desc);
+                setExpense({ desc: '', amount: '' });
+                addNotification("Expense Logged", `Logged expense: $${expense.amount}`, "info");
+            };
+
+            return (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 fade-in">
+                    <Card>
+                        <CardHeader><CardTitle>App Information</CardTitle></CardHeader>
+                        <CardContent>
+                            <p className="text-sm text-slate-500 mb-2">RestroBuddy Version 1.0.0</p>
+                            <p className="text-sm text-slate-500">A simple, offline-first restaurant management system.</p>
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border-red-100">
+                        <CardHeader><CardTitle className="text-red-600">Danger Zone</CardTitle></CardHeader>
+                        <CardContent>
+                            <p className="text-sm text-slate-500 mb-4">This will delete all local data and reset the application to its initial seeded state.</p>
+                            <Button variant="danger" onClick={() => { if (confirm("Are you sure?")) resetData(); }}>
+                                <Icon name="trash-2" size={16} /> Hard Reset App
+                            </Button>
+                        </CardContent>
+                    </Card>
+                </div>
+            );
+        }
+
+        // --- AUTH COMPONENT ---
+        const Auth = ({ onLogin }) => {
+            const [isRegister, setIsRegister] = useState(false);
+            const [formData, setFormData] = useState({ username: '', password: '' });
+            const [error, setError] = useState('');
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                setError('');
+                const { username, password } = formData;
+                if (!username || !password) { setError("All fields are required"); return; }
+
+                const users = JSON.parse(localStorage.getItem('rb_users') || '{}');
+
+                if (isRegister) {
+                    if (users[username]) { setError("Username already taken"); return; }
+                    users[username] = { password };
+                    localStorage.setItem('rb_users', JSON.stringify(users));
+                    alert("Account created! Please login.");
+                    setIsRegister(false);
+                    setFormData({ username: '', password: '' });
+                } else {
+                    if (!users[username] || users[username].password !== password) {
+                        setError("Invalid credentials");
+                        return;
+                    }
+                    onLogin(username);
+                }
+            };
+
+            return (
+                <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+                    <Card className="w-full max-w-md shadow-xl">
+                        <CardHeader className="text-center space-y-2">
+                            <div className="mx-auto w-12 h-12 bg-primary rounded-full flex items-center justify-center text-white mb-2">
+                                <Icon name="pizza" size={24} />
+                            </div>
+                            <CardTitle className="text-2xl text-slate-800">RestroBuddy</CardTitle>
+                            <p className="text-slate-500 text-sm">{isRegister ? 'Create your account' : 'Sign in to your account'}</p>
+                        </CardHeader>
+                        <CardContent>
+                            <form onSubmit={handleSubmit} className="space-y-4">
+                                {error && <div className="p-3 text-sm text-red-600 bg-red-50 rounded-lg border border-red-100">{error}</div>}
+                                <div className="space-y-2">
+                                    <Label>Username</Label>
+                                    <Input
+                                        type="text"
+                                        placeholder="Enter your username"
+                                        value={formData.username}
+                                        onChange={e => setFormData({ ...formData, username: e.target.value })}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Password</Label>
+                                    <Input
+                                        type="password"
+                                        placeholder="Enter your password"
+                                        value={formData.password}
+                                        onChange={e => setFormData({ ...formData, password: e.target.value })}
+                                    />
+                                </div>
+                                <Button type="submit" className="w-full" size="lg">
+                                    {isRegister ? 'Create Account' : 'Sign In'}
+                                </Button>
+                            </form>
+                            <div className="mt-6 text-center">
+                                <p className="text-sm text-slate-500">
+                                    {isRegister ? 'Already have an account?' : "Don't have an account?"}
+                                    <button
+                                        type="button"
+                                        onClick={() => { setIsRegister(!isRegister); setError(''); }}
+                                        className="ml-1 font-medium text-primary hover:underline focus:outline-none"
+                                    >
+                                        {isRegister ? 'Sign In' : 'Sign Up'}
+                                    </button>
+                                </p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            );
+        };
+
+        // --- MAIN APP SHELL ---
+        const AppContent = ({ onLogout }) => {
+            const { purchaseOrders, receivePO, deletePO, updatePODate } = useData();
+            const [view, setView] = useState('dashboard');
+            const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+            const [duePO, setDuePO] = useState(null);
+
+            // PO Check Effect
+            useEffect(() => {
+                const checkDuePOs = () => {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+
+                    const foundPO = purchaseOrders.find(po => {
+                        if (po.status !== 'pending') return false;
+                        // Convert delivery date string to date object and remove time
+                        const delivery = new Date(po.deliveryDate);
+                        // We need to account for timezone potential issues, usually date input is YYYY-MM-DD
+                        // new Date("YYYY-MM-DD") is UTC, but new Date() is local.
+                        // Let's create date from parts to be safe as local time 00:00:00
+                        const parts = po.deliveryDate.split('-');
+                        const deliveryLocal = new Date(parts[0], parts[1] - 1, parts[2]);
+
+                        return deliveryLocal <= today;
+                    });
+
+                    if (foundPO) setDuePO(foundPO);
+                };
+
+                const timer = setTimeout(checkDuePOs, 1000);
+                return () => clearTimeout(timer);
+            }, [purchaseOrders]);
+
+            const navItems = [
+                { id: 'dashboard', label: 'Dashboard', icon: 'layout-dashboard' },
+                { id: 'pos', label: 'Point of Sale', icon: 'shopping-cart' },
+                { id: 'kitchen', label: 'Kitchen Display', icon: 'chef-hat' },
+                { id: 'history', label: 'Orders History', icon: 'history' },
+                { id: 'inventory', label: 'Inventory', icon: 'package' },
+                { id: 'restock', label: 'Restock', icon: 'refresh-cw' },
+                { id: 'purchase-orders', label: 'Purchase Orders', icon: 'truck' },
+                { id: 'menu', label: 'Menu & Recipes', icon: 'book-open' },
+                { id: 'settings', label: 'Settings', icon: 'settings' },
+            ];
+
+            return (
+                <div className="flex h-screen bg-background overflow-hidden relative">
+                    {/* Sidebar */}
+                    <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-secondary text-white transform transition-transform duration-300 lg:relative lg:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                        <div className="p-6 border-b border-white/10 flex items-center justify-between">
+                            <h1 className="text-2xl font-bold flex items-center gap-2">
+                                <span className="text-primary"><Icon name="pizza" /></span>
+                                RestroBuddy
+                            </h1>
+                            <button onClick={() => setIsMobileMenuOpen(false)} className="lg:hidden text-white/50 hover:text-white"><Icon name="x" /></button>
+                        </div>
+                        <nav className="p-4 space-y-2">
+                            {navItems.map(item => (
+                                <button
+                                    key={item.id}
+                                    onClick={() => { setView(item.id); setIsMobileMenuOpen(false); }}
+                                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-all ${view === item.id ? 'bg-primary text-white shadow-lg' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+                                >
+                                    <Icon name={item.icon} size={20} />
+                                    <span className="font-medium">{item.label}</span>
+                                </button>
+                            ))}
+                        </nav>
+                        <div className="absolute bottom-6 left-6 right-6 p-4 bg-white/5 rounded-xl border border-white/5">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center font-bold text-white capitalize">
+                                    {localStorage.getItem('rb_user')?.charAt(0) || 'U'}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-medium truncate capitalize">{localStorage.getItem('rb_user') || 'User'}</p>
+                                    <p className="text-xs text-white/50">Manager</p>
+                                </div>
+                                <button onClick={onLogout} className="text-slate-400 hover:text-white transition-colors" title="Logout">
+                                    <Icon name="log-out" size={18} />
+                                </button>
+                            </div>
+                        </div>
+                    </aside>
+
+                    {/* Main Content */}
+                    <main className="flex-1 flex flex-col h-full overflow-hidden relative">
+                        {/* Header */}
+                        <header className="bg-white border-b border-slate-200 p-4 flex items-center justify-between sticky top-0 z-30">
+                            <div className="flex items-center gap-3">
+                                <button onClick={() => setIsMobileMenuOpen(true)} className="lg:hidden text-slate-600"><Icon name="menu" /></button>
+                                <h1 className="font-bold text-lg text-slate-800 capitalize">{view.replace('-', ' ')}</h1>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <NotificationBell />
+                            </div>
+                        </header>
+
+                        {/* View Area */}
+                        <div className="flex-1 overflow-auto p-4 md:p-8 relative">
+                            {view === 'dashboard' && <Dashboard />}
+                            {view === 'pos' && <POS />}
+                            {view === 'kitchen' && <Kitchen />}
+                            {view === 'history' && <OrdersHistory />}
+                            {view === 'inventory' && <Inventory />}
+                            {view === 'menu' && <Menu />}
+                            {view === 'restock' && <Restock />}
+                            {view === 'purchase-orders' && <PurchaseOrders />}
+                            {view === 'settings' && <Settings />}
+                        </div>
+                    </main>
+
+                    {/* Mobile Overlay */}
+                    {isMobileMenuOpen && <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setIsMobileMenuOpen(false)}></div>}
+
+                    {/* Due PO Modal */}
+                    {duePO && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[60] backdrop-blur-sm">
+                            <Card className="w-full max-w-md animate-in fade-in zoom-in-95 shadow-2xl border-orange-200">
+                                <CardHeader className="bg-orange-50 border-b border-orange-100">
+                                    <CardTitle className="text-orange-800 flex items-center gap-2">
+                                        <Icon name="truck" size={20} /> Delivery Confirmation
+                                    </CardTitle>
+                                </CardHeader>
+                                <CardContent className="pt-6">
+                                    <p className="mb-4 text-slate-700">Did the purchase order from <strong>{duePO.vendor}</strong> (Due: {new Date(duePO.deliveryDate).toLocaleDateString()}) arrive?</p>
+
+                                    <div className="flex flex-col gap-3">
+                                        <Button variant="success" onClick={() => { receivePO(duePO.id); setDuePO(null); }}>Yes, Order Arrived</Button>
+                                        <div className="text-center text-xs text-slate-400 font-medium my-1">- OR -</div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <Button variant="outline" onClick={() => {
+                                                const newDate = prompt("Enter new delivery date (YYYY-MM-DD):", duePO.deliveryDate);
+                                                if (newDate) {
+                                                    updatePODate(duePO.id, newDate);
+                                                    setDuePO(null);
+                                                }
+                                            }}>Update Date</Button>
+                                            <Button variant="danger" onClick={() => {
+                                                if (confirm("Delete this purchase order permanently?")) {
+                                                    deletePO(duePO.id);
+                                                    setDuePO(null);
+                                                }
+                                            }}>Delete</Button>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const App = () => {
+            const [user, setUser] = useState(() => localStorage.getItem('rb_user') || null);
+
+            const handleLogin = (username) => {
+                localStorage.setItem('rb_user', username);
+                setUser(username);
+            };
+
+            const handleLogout = () => {
+                localStorage.removeItem('rb_user');
+                setUser(null);
+                window.location.reload();
+            };
+
+            return (
+                <DataProvider key={user} user={user}>
+                    {user ? <AppContent onLogout={handleLogout} /> : <Auth onLogin={handleLogin} />}
+                </DataProvider>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+
+</html>
