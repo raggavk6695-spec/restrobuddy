@@ -21,6 +21,10 @@
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
+    <!-- jsPDF & AutoTable -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.31/jspdf.plugin.autotable.min.js"></script>
+
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -513,16 +517,27 @@
                         const stockItemIdx = newInventory.findIndex(i => i.id === item.id);
                         if (stockItemIdx > -1) {
                             newInventory[stockItemIdx].stock += parseFloat(item.qty);
-                            // Update cost if needed? For now we just use the PO unit cost for expense
                             totalCost += (item.qty * item.unitCost);
                         }
                     });
                     setInventory(newInventory);
-                    setPurchaseOrders(purchaseOrders.map(p => p.id === poId ? { ...p, status: 'received' } : p));
-                    addExpense(totalCost, `PO Received: #${poId} (${po.vendor})`);
-                    addNotification("PO Received", `Received order from ${po.vendor}. Inventory updated.`, "success");
                 }
             };
+
+            const logWaste = (itemId, qty, reason) => {
+                const item = inventory.find(i => i.id === itemId);
+                if (item) {
+                    const newInventory = inventory.map(i =>
+                        i.id === itemId ? { ...i, stock: Math.max(0, i.stock - parseFloat(qty)) } : i
+                    );
+                    setInventory(newInventory);
+                    // Calculate cost of waste
+                    const cost = (parseFloat(qty) * (item.cost || 0));
+                    addExpense(cost, `Waste: ${item.name} (${qty} ${item.unit}) - ${reason}`);
+                    addNotification("Waste Logged", `${item.name} waste recorded.`, "warning");
+                }
+            };
+
 
             const updatePODate = (poId, newDate) => {
                 setPurchaseOrders(purchaseOrders.map(p => p.id === poId ? { ...p, deliveryDate: newDate } : p));
@@ -557,11 +572,19 @@
                 window.location.reload();
             };
 
+            const calculateItemCost = (menuItem) => {
+                if (!menuItem.ingredients || menuItem.ingredients.length === 0) return 0;
+                return menuItem.ingredients.reduce((total, ing) => {
+                    const invItem = inventory.find(i => i.id === ing.id);
+                    return total + (ing.qty * (invItem?.cost || 0));
+                }, 0);
+            };
+
             return (
                 <DataContext.Provider value={{
                     inventory, menu, orders, transactions, purchaseOrders, notifications,
                     addOrder, updateOrderStatus, addIngredient, deleteIngredient, addExpense, resetData,
-                    addMenu, deleteMenu, restockIngredient,
+                    addMenu, deleteMenu, restockIngredient, logWaste, calculateItemCost,
                     addPO, receivePO, updatePODate, deletePO,
                     addNotification, markNotificationsRead, clearNotifications
                 }}>
@@ -574,7 +597,7 @@
 
         // --- DASHBOARD VIEW (Dyanmic Analytics) ---
         const Dashboard = () => {
-            const { orders, transactions, inventory, purchaseOrders } = useData();
+            const { orders, transactions, inventory, purchaseOrders, menu } = useData();
             const [dateRange, setDateRange] = useState('today'); // today, week, month, year
 
             const isInDateRange = (dateString, range) => {
@@ -618,6 +641,39 @@
             const criticalStock = inventory.filter(i => i.stock <= 0).length;
             const lowStock = inventory.filter(i => i.stock > 0 && i.stock <= i.minStock).length;
             const pendingPOs = purchaseOrders.filter(po => po.status === 'pending').length;
+
+            // Predictive Analytics
+            const calculatePredictions = () => {
+                const sevenDaysAgo = new Date();
+                sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+                const usageMap = {}; // { ingredientId: totalQtyUsed }
+
+                const relevantOrders = orders.filter(o => {
+                    const orderDate = new Date(o.date);
+                    // Check status where stock is deducted
+                    return orderDate >= sevenDaysAgo && (o.status === 'ready' || o.status === 'completed');
+                });
+
+                relevantOrders.forEach(order => {
+                    order.items.forEach(orderItem => {
+                        const menuItem = menu.find(m => m.id === orderItem.id);
+                        if (menuItem && menuItem.ingredients) {
+                            menuItem.ingredients.forEach(ing => {
+                                usageMap[ing.id] = (usageMap[ing.id] || 0) + (ing.qty * orderItem.qty);
+                            });
+                        }
+                    });
+                });
+
+                return inventory.map(item => {
+                    const totalUsage = usageMap[item.id] || 0;
+                    const avgDailyUsage = totalUsage / 7;
+                    const daysRemaining = avgDailyUsage > 0 ? item.stock / avgDailyUsage : 999;
+                    return { ...item, daysRemaining };
+                }).filter(item => item.daysRemaining < 3 && item.stock > 0).sort((a, b) => a.daysRemaining - b.daysRemaining);
+            };
+            const predictions = calculatePredictions();
 
             // Calculate Top Selling
             const itemSales = {};
@@ -702,7 +758,37 @@
                         />
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <Card className="h-full">
+                            <CardHeader><CardTitle>Critical Stock Forecast</CardTitle></CardHeader>
+                            <CardContent>
+                                <div className="space-y-4">
+                                    {predictions.map(item => (
+                                        <div key={item.id} className="bg-red-50/50 p-3 rounded-lg border border-red-100">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="font-medium text-slate-700">{item.name}</span>
+                                                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${item.daysRemaining < 1 ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700'}`}>
+                                                    {item.daysRemaining.toFixed(1)} Days Left
+                                                </span>
+                                            </div>
+                                            <div className="w-full bg-slate-200 rounded-full h-1.5">
+                                                <div
+                                                    className={`h-1.5 rounded-full transition-all duration-500 ${item.daysRemaining < 1 ? 'bg-red-500' : 'bg-orange-500'}`}
+                                                    style={{ width: `${Math.min(100, (item.daysRemaining / 3) * 100)}%` }}
+                                                ></div>
+                                            </div>
+                                            <p className="text-[10px] text-slate-400 mt-1 text-right">{item.stock} {item.unit} in stock</p>
+                                        </div>
+                                    ))}
+                                    {predictions.length === 0 && (
+                                        <div className="text-center py-8 text-slate-400">
+                                            <Icon name="trending-up" size={32} className="mx-auto mb-2 text-emerald-400" />
+                                            <p className="text-sm">Usage looks stable.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
                         <Card className="h-full">
                             <CardHeader><CardTitle>Top Selling Items</CardTitle></CardHeader>
                             <CardContent>
@@ -776,7 +862,7 @@
 
         // --- POS VIEW ---
         const POS = () => {
-            const { menu, addOrder, addNotification } = useData();
+            const { menu, addOrder, addNotification, calculateItemCost } = useData();
             const [cart, setCart] = useState([]);
             const [category, setCategory] = useState('All');
             const [isMobileCartOpen, setIsMobileCartOpen] = useState(false);
@@ -902,7 +988,17 @@
                                             <span className="font-bold text-lg">{item.emoji || '🍽️'}</span>
                                         </div>
                                         <h3 className="font-bold text-slate-800 leading-tight mb-1">{item.name}</h3>
-                                        <p className="text-orange-600 font-semibold">₹{item.price}</p>
+                                        <div className="flex justify-between items-end">
+                                            <p className="text-orange-600 font-semibold">₹{item.price}</p>
+                                            {item.ingredients && (
+                                                <div className="text-right">
+                                                    <p className="text-[10px] text-slate-400">Cost: ₹{calculateItemCost(item).toFixed(1)}</p>
+                                                    <p className={`text-[10px] font-bold ${((item.price - calculateItemCost(item)) / item.price) * 100 < 30 ? 'text-red-500' : 'text-emerald-500'}`}>
+                                                        {((item.price - calculateItemCost(item)) / item.price * 100).toFixed(0)}% Margin
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -951,9 +1047,11 @@
 
         // --- INVENTORY VIEW (Modernized) ---
         const Inventory = () => {
-            const { inventory, addIngredient, deleteIngredient } = useData();
+            const { inventory, addIngredient, deleteIngredient, logWaste } = useData();
             const [isEditing, setIsEditing] = useState(null);
+            const [isWasteOpen, setIsWasteOpen] = useState(false);
             const [formData, setFormData] = useState({ name: '', stock: '', unit: 'kg', minStock: '', cost: '' });
+            const [wasteData, setWasteData] = useState({ id: '', qty: '', reason: '' });
 
             const handleSubmit = (e) => {
                 e.preventDefault();
@@ -962,9 +1060,23 @@
                 setFormData({ name: '', stock: '', unit: 'kg', minStock: '', cost: '' });
             };
 
+            const handleWasteSubmit = (e) => {
+                e.preventDefault();
+                if (!wasteData.id || !wasteData.qty) return;
+                logWaste(parseInt(wasteData.id), parseFloat(wasteData.qty), wasteData.reason);
+                setIsWasteOpen(false);
+                setWasteData({ id: '', qty: '', reason: '' });
+            };
+
             const startEdit = (item) => {
                 setFormData(item || { name: '', stock: '', unit: 'kg', minStock: '', cost: '' });
                 setIsEditing(true);
+            };
+
+            const updateStock = (item, delta, e) => {
+                e.stopPropagation(); // Prevent opening modal
+                const newStock = Math.max(0, parseFloat((item.stock + delta).toFixed(2)));
+                addIngredient({ ...item, stock: newStock });
             };
 
             const RowAction = ({ onClick, icon, color }) => (
@@ -978,7 +1090,10 @@
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between">
                             <CardTitle>Inventory</CardTitle>
-                            <Button size="sm" onClick={() => startEdit(null)}><Icon name="plus" size={16} className="mr-2" /> Add Item</Button>
+                            <div className="flex gap-2">
+                                <Button size="sm" variant="danger" onClick={() => setIsWasteOpen(true)} className="bg-red-100 text-red-600 hover:bg-red-200 border-red-200"><Icon name="trash-2" size={16} className="mr-2" /> Log Waste</Button>
+                                <Button size="sm" onClick={() => startEdit(null)}><Icon name="plus" size={16} className="mr-2" /> Add Item</Button>
+                            </div>
                         </CardHeader>
                         <CardContent>
                             {/* Mobile Card View */}
@@ -990,10 +1105,15 @@
                                             <p className="text-xs text-slate-500">Min: {item.minStock} {item.unit} | ₹{item.cost || 0}/unit</p>
                                         </div>
                                         <div className="text-right">
-                                            <p className={`font-bold ${item.stock <= item.minStock ? 'text-red-500' : 'text-emerald-600'}`}>
-                                                {item.stock} <span className="text-xs font-normal text-slate-400">{item.unit}</span>
-                                            </p>
-                                            <div className="flex justify-end mt-2 gap-2">
+                                            <div className="flex items-center justify-end gap-2 mb-2">
+                                                <button onClick={(e) => updateStock(item, -1, e)} className="p-1 bg-slate-100 rounded text-slate-500"><Icon name="minus" size={12} /></button>
+                                                <p className={`font-bold ${item.stock <= item.minStock ? 'text-red-500' : 'text-emerald-600'}`}>
+                                                    {item.stock} <span className="text-xs font-normal text-slate-400">{item.unit}</span>
+                                                </p>
+                                                <button onClick={(e) => updateStock(item, 1, e)} className="p-1 bg-slate-100 rounded text-slate-500"><Icon name="plus" size={12} /></button>
+                                            </div>
+                                            <div className="flex justify-end gap-2">
+                                                <RowAction icon="edit" color="text-blue-400 hover:text-blue-600" onClick={() => startEdit(item)} />
                                                 <RowAction icon="trash-2" color="text-red-400 hover:text-red-600" onClick={() => { if (confirm('Delete ' + item.name + '?')) deleteIngredient(item.id) }} />
                                             </div>
                                         </div>
@@ -1019,7 +1139,11 @@
                                             <tr key={item.id} className="group hover:bg-slate-50/50 transition-colors cursor-pointer" onClick={() => startEdit(item)}>
                                                 <td className="px-4 py-3 font-medium text-slate-700">{item.name}</td>
                                                 <td className={`px-4 py-3 font-bold ${item.stock <= item.minStock ? 'text-red-500' : 'text-emerald-600'}`}>
-                                                    {item.stock}
+                                                    <div className="flex items-center gap-2">
+                                                        <button onClick={(e) => updateStock(item, -1, e)} className="p-1 hover:bg-slate-200 rounded text-slate-500"><Icon name="minus" size={12} /></button>
+                                                        {item.stock}
+                                                        <button onClick={(e) => updateStock(item, 1, e)} className="p-1 hover:bg-slate-200 rounded text-slate-500"><Icon name="plus" size={12} /></button>
+                                                    </div>
                                                 </td>
                                                 <td className="px-4 py-3 text-slate-500">{item.unit}</td>
                                                 <td className="px-4 py-3 text-slate-500">₹{item.cost || 0}</td>
@@ -1029,6 +1153,7 @@
                                                             <span className="text-emerald-500 font-bold text-xs bg-emerald-50 px-2 py-0.5 rounded">OK</span>}
                                                 </td>
                                                 <td className="px-4 py-3 text-right flex justify-end gap-1">
+                                                    <RowAction icon="edit" color="text-slate-400 hover:text-blue-600" onClick={() => startEdit(item)} />
                                                     <RowAction icon="trash-2" color="text-slate-400 hover:text-red-600" onClick={() => { if (confirm('Delete ' + item.name + '?')) deleteIngredient(item.id) }} />
                                                 </td>
                                             </tr>
@@ -1085,13 +1210,51 @@
                             </Card>
                         </div>
                     )}
+
+                    {/* Waste Log Modal */}
+                    {isWasteOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in">
+                            <Card className="w-full max-w-md shadow-2xl border-red-100">
+                                <CardHeader className="flex flex-row items-center justify-between border-b border-slate-100 pb-4 bg-red-50/50 rounded-t-xl">
+                                    <div className="flex items-center gap-2 text-red-700">
+                                        <Icon name="trash-2" size={20} />
+                                        <CardTitle className="text-red-700">Log Waste</CardTitle>
+                                    </div>
+                                    <button onClick={() => setIsWasteOpen(false)} className="text-slate-400 hover:text-slate-600"><Icon name="x" size={20} /></button>
+                                </CardHeader>
+                                <CardContent className="pt-6">
+                                    <form onSubmit={handleWasteSubmit} className="space-y-4">
+                                        <div className="space-y-1">
+                                            <label className="text-sm font-medium text-slate-700">Item</label>
+                                            <select className="flex h-10 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500/20" value={wasteData.id} onChange={e => setWasteData({ ...wasteData, id: e.target.value })} required>
+                                                <option value="">Select Item...</option>
+                                                {inventory.map(i => <option key={i.id} value={i.id}>{i.name} (Current: {i.stock} {i.unit})</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-sm font-medium text-slate-700">Quantity Wasted</label>
+                                            <Input type="number" step="0.01" value={wasteData.qty} onChange={e => setWasteData({ ...wasteData, qty: e.target.value })} required placeholder="0.00" className="focus:ring-red-500/20" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-sm font-medium text-slate-700">Reason</label>
+                                            <Input value={wasteData.reason} onChange={e => setWasteData({ ...wasteData, reason: e.target.value })} required placeholder="e.g. Expired, Dropped, Spilled" className="focus:ring-red-500/20" />
+                                        </div>
+                                        <div className="pt-4 flex justify-end gap-2">
+                                            <Button type="button" variant="secondary" onClick={() => setIsWasteOpen(false)}>Cancel</Button>
+                                            <Button type="submit" className="bg-red-600 hover:bg-red-700 text-white">Confirm Waste</Button>
+                                        </div>
+                                    </form>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    )}
                 </div>
             );
         };
 
         // --- MENU VIEW (Modernized) ---
         const Menu = () => {
-            const { menu, inventory, addMenu, deleteMenu } = useData();
+            const { menu, inventory, addMenu, deleteMenu, calculateItemCost } = useData();
             const [isEditing, setIsEditing] = useState(null);
             const [formData, setFormData] = useState({ name: '', price: '', category: '', ingredients: [], emoji: '' });
             const [newIng, setNewIng] = useState({ id: '', qty: '' });
@@ -1109,11 +1272,16 @@
             };
 
             const addIng = () => {
-                if (newIng.id && newIng.qty) {
-                    setFormData({ ...formData, ingredients: [...formData.ingredients, { id: parseInt(newIng.id), qty: parseFloat(newIng.qty) }] });
-                    setNewIng({ id: '', qty: '' });
-                }
+                if (!newIng.id || !newIng.qty) return;
+                setFormData({
+                    ...formData,
+                    ingredients: [...formData.ingredients, { id: parseInt(newIng.id), qty: parseFloat(newIng.qty) }]
+                });
+                setNewIng({ id: '', qty: '' });
             };
+
+
+
 
             const removeIng = (idx) => {
                 setFormData({ ...formData, ingredients: formData.ingredients.filter((_, i) => i !== idx) });
@@ -1138,7 +1306,17 @@
                                                 <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full mt-1 inline-block">{item.category}</span>
                                             </div>
                                         </div>
-                                        <span className="font-bold text-lg text-primary">₹{item.price}</span>
+                                        <div className="text-right">
+                                            <span className="font-bold text-lg text-primary block">₹{item.price}</span>
+                                            {item.ingredients && item.ingredients.length > 0 && (
+                                                <div className="text-[10px] mt-1">
+                                                    <span className="text-slate-400 block">Cost: ₹{calculateItemCost(item).toFixed(2)}</span>
+                                                    <span className={`font-bold ${((item.price - calculateItemCost(item)) / item.price) * 100 < 30 ? 'text-red-500' : 'text-emerald-500'}`}>
+                                                        {((item.price - calculateItemCost(item)) / item.price * 100).toFixed(0)}% Margin
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </CardHeader>
                                 <CardContent>
@@ -1199,7 +1377,7 @@
                                                     {inventory.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
                                                 </select>
                                                 <Input type="number" step="0.01" placeholder="Qty" value={newIng.qty} onChange={e => setNewIng({ ...newIng, qty: e.target.value })} className="w-24" />
-                                                <Button type="button" onClick={addIng} type="button"><Icon name="plus" size={16} /></Button>
+                                                <Button type="button" onClick={addIng}><Icon name="plus" size={16} /></Button>
                                             </div>
                                             <div className="bg-slate-50 p-2 rounded-lg max-h-32 overflow-y-auto space-y-1 border border-slate-100">
                                                 {formData.ingredients.length === 0 && <p className="text-xs text-slate-400 text-center py-2">No ingredients added.</p>}
@@ -1334,6 +1512,55 @@
             const { orders } = useData();
             const completedOrders = orders.filter(o => o.status === 'completed' || o.status === 'cancelled').sort((a, b) => new Date(b.date) - new Date(a.date));
 
+            const generateReceipt = (order) => {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+
+                // Header
+                doc.setFontSize(22);
+                doc.setTextColor(249, 115, 22); // Orange
+                doc.text("RestroBuddy", 105, 20, null, null, "center");
+
+                doc.setFontSize(12);
+                doc.setTextColor(100);
+                doc.text("Official Receipt", 105, 30, null, null, "center");
+
+                // Order Info
+                doc.setFontSize(10);
+                doc.text(`Order ID: #${order.id}`, 14, 45);
+                doc.text(`Date: ${new Date(order.date).toLocaleString()}`, 14, 50);
+                doc.text(`Payment: ${order.method}`, 14, 55);
+
+                // Table
+                doc.autoTable({
+                    startY: 65,
+                    head: [['Item', 'Qty', 'Price', 'Total']],
+                    body: order.items.map(item => [
+                        item.name,
+                        item.qty,
+                        `Rs. ${item.price.toFixed(2)}`,
+                        `Rs. ${(item.qty * item.price).toFixed(2)}`
+                    ]),
+                    theme: 'striped',
+                    headStyles: { fillColor: [249, 115, 22] },
+                    styles: { fontSize: 10 }
+                });
+
+                // Grand Total
+                const finalY = doc.lastAutoTable.finalY + 10;
+                doc.setFontSize(12);
+                doc.setFont(undefined, 'bold');
+                doc.text(`Grand Total: Rs. ${order.total.toFixed(2)}`, 196, finalY, null, null, "right");
+
+                // Footer
+                doc.setFontSize(8);
+                doc.setFont(undefined, 'normal');
+                doc.setTextColor(150);
+                doc.text("Thank you for dining with us!", 105, finalY + 20, null, null, "center");
+
+                doc.save(`Receipt_${order.id}.pdf`);
+            };
+
             return (
                 <div className="space-y-6 fade-in pb-20">
                     <h2 className="text-2xl font-bold text-slate-800">Orders History</h2>
@@ -1350,12 +1577,13 @@
                                             <th className="p-4 font-medium">Items</th>
                                             <th className="p-4 font-medium text-right">Total</th>
                                             <th className="p-4 font-medium text-center">Status</th>
+                                            <th className="p-4 font-medium text-center">Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {completedOrders.length === 0 && (
                                             <tr>
-                                                <td colSpan="5" className="p-8 text-center text-slate-400">No completed orders yet.</td>
+                                                <td colSpan="6" className="p-8 text-center text-slate-400">No completed orders yet.</td>
                                             </tr>
                                         )}
                                         {completedOrders.map(order => (
@@ -1378,6 +1606,11 @@
                                                     <Badge variant={order.status === 'completed' ? 'success' : 'danger'}>
                                                         {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
                                                     </Badge>
+                                                </td>
+                                                <td className="p-4 text-center">
+                                                    <Button variant="ghost" size="sm" onClick={() => generateReceipt(order)} className="text-slate-500 hover:text-orange-600" title="Download Receipt">
+                                                        <Icon name="file-text" size={18} />
+                                                    </Button>
                                                 </td>
                                             </tr>
                                         ))}
@@ -1414,8 +1647,10 @@
                                         ))}
                                     </div>
                                     <div className="flex justify-between items-center border-t border-slate-50 pt-3">
-                                        <span className="text-sm font-medium text-slate-500">Total</span>
-                                        <span className="text-lg font-bold text-slate-800">₹{order.total.toFixed(2)}</span>
+                                        <span className="text-sm font-medium text-slate-500">Total: <span className="text-lg font-bold text-slate-800">₹{order.total.toFixed(2)}</span></span>
+                                        <Button variant="outline" size="sm" onClick={() => generateReceipt(order)} className="text-xs flex items-center gap-1">
+                                            <Icon name="download" size={14} /> Receipt
+                                        </Button>
                                     </div>
                                 </CardContent>
                             </Card>
@@ -1538,6 +1773,36 @@
                 setFormData({ ...formData, items: formData.items.filter((_, i) => i !== idx) });
             };
 
+            const updateItem = (idx, field, value) => {
+                const newItems = [...formData.items];
+                newItems[idx] = { ...newItems[idx], [field]: parseFloat(value) || 0 };
+                setFormData({ ...formData, items: newItems });
+            };
+
+            const autoFillPO = () => {
+                const lowStockItems = inventory.filter(i => i.stock <= i.minStock);
+                if (lowStockItems.length === 0) {
+                    alert("No low stock items found.");
+                    return;
+                }
+
+                const newItems = lowStockItems.map(item => {
+                    // Default logic: Order enough to reach 3x minStock or at least minStock + 10 if 3x is too low
+                    // Since we don't have maxStock, we'll use a simple rule: Target = minStock * 3
+                    const targetStock = item.minStock * 3;
+                    const qtyNeeded = Math.max(targetStock - item.stock, 0);
+
+                    return {
+                        id: item.id,
+                        qty: parseFloat(qtyNeeded.toFixed(2)),
+                        unitCost: item.cost || 0
+                    };
+                }).filter(i => i.qty > 0);
+
+                setFormData({ ...formData, items: [...formData.items, ...newItems] });
+                alert(`Added ${newItems.length} low-stock items to the order.`);
+            };
+
             const sortedPOs = [...purchaseOrders].sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate));
 
             return (
@@ -1631,6 +1896,11 @@
                                             </div>
                                             <div className="space-y-1">
                                                 <label className="text-sm font-medium text-slate-700">Delivery Date</label>
+                                                <div className="flex place-items-end mb-1">
+                                                    <Button type="button" size="sm" variant="outline" onClick={autoFillPO} className="text-xs ml-auto">
+                                                        <Icon name="zap" size={14} className="mr-1 text-orange-500" /> Auto-Fill Low Stock
+                                                    </Button>
+                                                </div>
                                                 <Input type="date" value={formData.deliveryDate} onChange={e => setFormData({ ...formData, deliveryDate: e.target.value })} required />
                                             </div>
                                         </div>
@@ -1677,16 +1947,28 @@
                                                             </div>
                                                             <div className="flex items-center gap-4 mt-2 md:mt-0 ml-9 md:ml-0 w-full md:w-auto justify-between md:justify-end">
                                                                 <div className="text-right">
-                                                                    <span className="block text-xs text-slate-400">Qty</span>
-                                                                    <span className="font-medium text-slate-700">{item.qty} {invItem?.unit}</span>
+                                                                    <span className="block text-xs text-slate-400 mb-1">Qty</span>
+                                                                    <Input
+                                                                        type="number"
+                                                                        step="0.01"
+                                                                        value={item.qty}
+                                                                        onChange={(e) => updateItem(idx, 'qty', e.target.value)}
+                                                                        className="h-8 w-20 text-right px-2 py-1 text-sm bg-slate-50 border-slate-200"
+                                                                    />
                                                                 </div>
                                                                 <div className="text-right">
-                                                                    <span className="block text-xs text-slate-400">Cost</span>
-                                                                    <span className="font-medium text-slate-700">₹{item.unitCost}</span>
+                                                                    <span className="block text-xs text-slate-400 mb-1">Cost (₹)</span>
+                                                                    <Input
+                                                                        type="number"
+                                                                        step="0.01"
+                                                                        value={item.unitCost}
+                                                                        onChange={(e) => updateItem(idx, 'unitCost', e.target.value)}
+                                                                        className="h-8 w-24 text-right px-2 py-1 text-sm bg-slate-50 border-slate-200"
+                                                                    />
                                                                 </div>
-                                                                <div className="text-right w-20">
-                                                                    <span className="block text-xs text-slate-400">Total</span>
-                                                                    <span className="font-bold text-slate-800">₹{(item.qty * item.unitCost).toFixed(2)}</span>
+                                                                <div className="text-right w-24">
+                                                                    <span className="block text-xs text-slate-400 mb-1">Total</span>
+                                                                    <span className="font-bold text-slate-800 block py-1">₹{(item.qty * item.unitCost).toFixed(2)}</span>
                                                                 </div>
                                                                 <button type="button" onClick={() => removeItem(idx)} className="text-slate-300 hover:text-red-500 p-2"><Icon name="x" size={18} /></button>
                                                             </div>
